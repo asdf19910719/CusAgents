@@ -1,0 +1,7 @@
+.env
+custom_agents.db
+output/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.shiftengine/
