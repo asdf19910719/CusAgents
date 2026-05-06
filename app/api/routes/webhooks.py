@@ -64,4 +64,27 @@ def handle_feishu_events(
         chat_id=message.get("chat_id"),
     )
     result = command_router.handle(db, command)
+    notification_service = command_router.notification_service
+    if notification_service is not None:
+        notification_service.notify_job_event(
+            db,
+            None,
+            event_type="command_result",
+            message=_format_command_result_message(result),
+            target_id=message.get("chat_id"),
+        )
     return result.model_dump()
+
+
+def _format_command_result_message(result):
+    lines = [
+        "命令执行结果",
+        "command={0}".format(result.command_name),
+        "success={0}".format(str(result.success).lower()),
+        "message={0}".format(result.message),
+    ]
+    if result.job_id is not None:
+        lines.append("job_id={0}".format(result.job_id))
+    if result.status:
+        lines.append("status={0}".format(result.status))
+    return "\n".join(lines)

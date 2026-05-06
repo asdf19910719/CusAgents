@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.core.enums import JobStatus
 from app.db.base import Base
 from app.db.models.job import Job
-from app.services.notification_service import FeishuWebhookNotifier, NotificationService
+from app.services.notification_service import (
+    FeishuAppMessageNotifier,
+    FeishuWebhookNotifier,
+    NotificationService,
+)
 
 
 def create_job(session):
@@ -76,3 +80,30 @@ def test_notification_service_records_failed_notification():
 
         assert record.status == "failed"
         assert "500" in (record.error_message or "")
+
+
+def test_feishu_app_message_notifier_sends_message_to_chat_id():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path, request.url.query, request.content.decode("utf-8")))
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(200, json={"tenant_access_token": "tenant-token"})
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "om_123"}})
+
+    notifier = FeishuAppMessageNotifier(
+        app_id="cli_a",
+        app_secret="secret_b",
+        open_base_url="https://open.feishu.cn/open-apis",
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://open.feishu.cn",
+        ),
+    )
+
+    payload = notifier.send_message("任务已完成", target_id="oc_test_chat")
+
+    assert payload["data"]["message_id"] == "om_123"
+    assert calls[0][1].endswith("/auth/v3/tenant_access_token/internal")
+    assert "/im/v1/messages" in calls[1][1]
+    assert "receive_id_type=chat_id" in calls[1][2].decode("utf-8")

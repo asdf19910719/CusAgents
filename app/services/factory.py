@@ -6,7 +6,7 @@ from app.providers.image.workflow_builder import WorkflowBuilder
 from app.providers.llm.factory import create_llm_provider
 from app.services.cache_service import CacheService
 from app.services.image_service import ImageGenerationService
-from app.services.notification_service import FeishuWebhookNotifier, NotificationService
+from app.services.notification_service import FeishuAppMessageNotifier, FeishuWebhookNotifier, NotificationService
 from app.services.orchestration_service import OrchestrationService
 from app.services.outline_service import OutlineService
 from app.services.prompt_service import PromptAssemblyService, PromptTemplateService
@@ -47,7 +47,13 @@ def build_image_providers(settings):
 
 def build_notification_service(settings):
     notifier = None
-    if settings.feishu_notify_webhook_url:
+    if settings.feishu_app_id and settings.feishu_app_secret:
+        notifier = FeishuAppMessageNotifier(
+            app_id=settings.feishu_app_id,
+            app_secret=settings.feishu_app_secret,
+            open_base_url=settings.feishu_open_base_url,
+        )
+    elif settings.feishu_notify_webhook_url:
         notifier = FeishuWebhookNotifier(webhook_url=settings.feishu_notify_webhook_url)
     return NotificationService(notifier=notifier)
 

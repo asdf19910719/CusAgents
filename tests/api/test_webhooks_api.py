@@ -25,11 +25,23 @@ def test_feishu_event_callback_can_create_job_from_text_command():
             return {"dispatch_status": "enqueued", "queue_name": "test-queue"}
 
     class FakeNotificationService:
+        def __init__(self):
+            self.calls = []
+
         def notify_job_event(self, session, job, event_type, message, target_id=None):
+            self.calls.append(
+                {
+                    "job_id": getattr(job, "id", None) if job is not None else None,
+                    "event_type": event_type,
+                    "message": message,
+                    "target_id": target_id,
+                }
+            )
             return None
 
+    notification_service = FakeNotificationService()
     app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
-    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    app.dependency_overrides[get_notification_service] = lambda: notification_service
     client = TestClient(app)
 
     try:
@@ -61,6 +73,8 @@ def test_feishu_event_callback_can_create_job_from_text_command():
     assert payload["command_name"] == "create_job"
     assert payload["status"] == "pending"
     assert payload["job_id"] is not None
+    assert notification_service.calls[-1]["event_type"] == "command_result"
+    assert notification_service.calls[-1]["target_id"] == "oc_test_chat"
 
 
 def test_feishu_event_callback_can_query_job_status():

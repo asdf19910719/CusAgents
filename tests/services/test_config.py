@@ -37,6 +37,9 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.output_dir == "./output"
     assert settings.third_party_image_api_path == "/images/generations"
     assert settings.feishu_notify_webhook_url == ""
+    assert settings.feishu_app_id == ""
+    assert settings.feishu_app_secret == ""
+    assert settings.feishu_open_base_url == "https://open.feishu.cn/open-apis"
     assert settings.feishu_verification_token == ""
 
 
