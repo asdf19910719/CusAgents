@@ -33,6 +33,7 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.llm_default_model == "gpt-4.1-mini"
     assert settings.comfyui_base_url == "http://127.0.0.1:8188"
     assert settings.output_dir == "./output"
+    assert settings.third_party_image_api_path == "/images/generations"
 
 
 def test_settings_require_llm_api_key(monkeypatch):

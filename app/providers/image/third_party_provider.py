@@ -9,16 +9,22 @@ class ThirdPartyImageProvider(BaseImageProvider):
         self.backend_name = backend_name
 
     def generate_image(self, shot_index, positive_prompt, negative_prompt, style_preset, seed):
+        prompt = positive_prompt
+        if style_preset:
+            prompt = "Style: {0}\n{1}".format(style_preset, prompt)
+        if negative_prompt:
+            prompt = "{0}\nAvoid: {1}".format(prompt, negative_prompt)
         payload = {
             "model": self.client.model_name,
-            "positive_prompt": positive_prompt,
-            "negative_prompt": negative_prompt,
-            "style_preset": style_preset,
-            "seed": seed,
-            "shot_index": shot_index,
+            "prompt": prompt,
+            "size": "1024x1024",
         }
         response = self.client.create_image(payload)
         image_base64 = response.get("image_base64") or response.get("b64_json")
+        if not image_base64:
+            data = response.get("data") or []
+            if data:
+                image_base64 = data[0].get("b64_json") or data[0].get("image_base64")
         if not image_base64:
             raise RuntimeError("third-party response missing image_base64")
         image_bytes = base64.b64decode(image_base64)
