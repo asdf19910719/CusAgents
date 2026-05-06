@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import html
+import time
 import uuid
 from urllib.parse import parse_qs
 
@@ -9,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.api.routes.jobs import get_job_dispatcher, get_notification_service, safe_enqueue
+from app.core.config import load_settings
 from app.core.enums import JobStatus
 from app.db.models.asset import Asset
 from app.db.models.job import Job
@@ -16,6 +20,7 @@ from app.db.models.review import Review
 
 
 router = APIRouter(prefix="/mobile", tags=["mobile"])
+MOBILE_SESSION_COOKIE = "mobile_session"
 
 
 def _page(title: str, body: str) -> HTMLResponse:
@@ -28,7 +33,6 @@ def _page(title: str, body: str) -> HTMLResponse:
   <style>
     :root {{
       color-scheme: light;
-      --bg: #f6f1e8;
       --card: #fffdfa;
       --text: #1f1a17;
       --muted: #74665d;
@@ -72,7 +76,7 @@ def _page(title: str, body: str) -> HTMLResponse:
       margin-bottom: 4px;
       color: var(--muted);
     }}
-    input, select, button, textarea {{
+    input, select, button {{
       width: 100%;
       border-radius: 12px;
       border: 1px solid var(--line);
@@ -131,6 +135,10 @@ def _page(title: str, body: str) -> HTMLResponse:
     return HTMLResponse(document)
 
 
+def _parse_form_body(raw_body: bytes) -> dict:
+    return parse_qs(raw_body.decode("utf-8"))
+
+
 def _job_summary(job: Job) -> str:
     return """
 <a class="job-link" href="/mobile/jobs/{0}">
@@ -148,14 +156,57 @@ def _job_summary(job: Job) -> str:
     )
 
 
+def _build_mobile_session_value(access_token: str, expires_at: int) -> str:
+    signature = hmac.new(
+        access_token.encode("utf-8"),
+        str(expires_at).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return "{0}.{1}".format(expires_at, signature)
+
+
+def _has_valid_mobile_session(request: Request, access_token: str) -> bool:
+    cookie_value = request.cookies.get(MOBILE_SESSION_COOKIE, "").strip()
+    if not cookie_value:
+        return False
+    try:
+        expires_text, signature = cookie_value.split(".", 1)
+        expires_at = int(expires_text)
+    except ValueError:
+        return False
+    if expires_at <= int(time.time()):
+        return False
+    expected_value = _build_mobile_session_value(access_token, expires_at)
+    return hmac.compare_digest("{0}.{1}".format(expires_at, signature), expected_value)
+
+
+def _mobile_settings():
+    return load_settings(allow_placeholder_llm_api_key=True)
+
+
+def _mobile_auth_redirect(request: Request):
+    settings = _mobile_settings()
+    access_token = (settings.mobile_access_token or "").strip()
+    if not access_token:
+        return None
+    if _has_valid_mobile_session(request, access_token):
+        return None
+    return RedirectResponse(url="/mobile/login", status_code=303)
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/jobs", response_class=HTMLResponse)
-def mobile_jobs_page(db: Session = Depends(get_db)):
+def mobile_jobs_page(request: Request, db: Session = Depends(get_db)):
+    redirect = _mobile_auth_redirect(request)
+    if redirect is not None:
+        return redirect
+
     jobs = db.execute(select(Job).order_by(Job.id.desc()).limit(20)).scalars().all()
     if jobs:
         jobs_html = "".join('<div class="card">{0}</div>'.format(_job_summary(job)) for job in jobs)
     else:
         jobs_html = '<div class="card"><p class="meta">当前还没有任务。</p></div>'
+
     body = """
 <section class="card">
   <h1>移动控制台</h1>
@@ -195,6 +246,52 @@ def mobile_jobs_page(db: Session = Depends(get_db)):
     return _page("移动控制台", body)
 
 
+@router.get("/login", response_class=HTMLResponse)
+def mobile_login_page():
+    body = """
+<section class="card">
+  <h1>手机控制登录</h1>
+  <p class="meta">当前移动控制页已启用单用户访问令牌，请先登录。</p>
+</section>
+<section class="card">
+  <h2>登录</h2>
+  <form method="post" action="/mobile/login">
+    <div class="row">
+      <div>
+        <label for="access_token">访问令牌</label>
+        <input id="access_token" name="access_token" type="password" required>
+      </div>
+    </div>
+    <button type="submit">登录</button>
+  </form>
+</section>"""
+    return _page("手机控制登录", body)
+
+
+@router.post("/login")
+async def mobile_login(request: Request):
+    settings = _mobile_settings()
+    configured_token = (settings.mobile_access_token or "").strip()
+    if not configured_token:
+        return RedirectResponse(url="/mobile/jobs", status_code=303)
+
+    payload = _parse_form_body(await request.body())
+    submitted_token = payload.get("access_token", [""])[0].strip()
+    if not submitted_token or not hmac.compare_digest(submitted_token, configured_token):
+        raise HTTPException(status_code=403, detail="invalid mobile access token")
+
+    expires_at = int(time.time()) + settings.mobile_session_max_age_seconds
+    response = RedirectResponse(url="/mobile/jobs", status_code=303)
+    response.set_cookie(
+        MOBILE_SESSION_COOKIE,
+        _build_mobile_session_value(configured_token, expires_at),
+        max_age=settings.mobile_session_max_age_seconds,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
 @router.post("/jobs")
 async def create_mobile_job(
     request: Request,
@@ -202,7 +299,11 @@ async def create_mobile_job(
     dispatcher=Depends(get_job_dispatcher),
     notification_service=Depends(get_notification_service),
 ):
-    payload = parse_qs((await request.body()).decode("utf-8"))
+    redirect = _mobile_auth_redirect(request)
+    if redirect is not None:
+        return redirect
+
+    payload = _parse_form_body(await request.body())
     topic = payload.get("topic", [""])[0].strip()
     style_preset = payload.get("style_preset", [""])[0].strip()
     image_backend = payload.get("image_backend", ["third_party"])[0].strip()
@@ -211,12 +312,13 @@ async def create_mobile_job(
         raise HTTPException(status_code=422, detail="topic and style_preset are required")
     try:
         target_shot_count = int(target_shot_count_raw)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="target_shot_count must be an integer")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="target_shot_count must be an integer") from exc
     if image_backend not in ("comfyui_remote", "third_party"):
         raise HTTPException(status_code=422, detail="invalid image backend")
     if target_shot_count < 1:
         raise HTTPException(status_code=422, detail="target_shot_count must be positive")
+
     job = Job(
         request_id=str(uuid.uuid4()),
         topic=topic,
@@ -241,10 +343,15 @@ async def create_mobile_job(
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)
-def mobile_job_detail(job_id: int, db: Session = Depends(get_db)):
+def mobile_job_detail(job_id: int, request: Request, db: Session = Depends(get_db)):
+    redirect = _mobile_auth_redirect(request)
+    if redirect is not None:
+        return redirect
+
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
+
     assets = db.execute(select(Asset).where(Asset.job_id == job_id).order_by(Asset.shot_index)).scalars().all()
     if assets:
         assets_html = "".join(
@@ -258,9 +365,11 @@ def mobile_job_detail(job_id: int, db: Session = Depends(get_db)):
         assets_section = "<ul>{0}</ul>".format(assets_html)
     else:
         assets_section = '<p class="meta">当前还没有生成素材。</p>'
+
     error_html = ""
     if job.error_message:
         error_html = '<div class="card"><h3>错误信息</h3><p>{0}</p></div>'.format(html.escape(job.error_message))
+
     body = """
 <section class="card">
   <h1>{0}</h1>
@@ -313,11 +422,16 @@ async def mobile_job_action(
     db: Session = Depends(get_db),
     dispatcher=Depends(get_job_dispatcher),
 ):
-    payload = parse_qs((await request.body()).decode("utf-8"))
+    redirect = _mobile_auth_redirect(request)
+    if redirect is not None:
+        return redirect
+
+    payload = _parse_form_body(await request.body())
     action = payload.get("action", [""])[0].strip()
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
+
     if action == "approve":
         job.status = JobStatus.COMPLETED
         db.add(

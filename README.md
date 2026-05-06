@@ -47,8 +47,12 @@
 13. `THIRD_PARTY_IMAGE_API_PATH`
 14. `FEISHU_NOTIFY_WEBHOOK_URL`
 15. `FEISHU_VERIFICATION_TOKEN`
-16. `AUTO_ENQUEUE_JOBS`
-17. `QUEUE_NAME`
+16. `FEISHU_ENCRYPT_KEY`
+17. `FEISHU_WEBHOOK_MAX_AGE_SECONDS`
+18. `MOBILE_ACCESS_TOKEN`
+19. `MOBILE_SESSION_MAX_AGE_SECONDS`
+20. `AUTO_ENQUEUE_JOBS`
+21. `QUEUE_NAME`
 
 说明：
 
@@ -59,6 +63,8 @@
    `third_party`
 4. `FEISHU_NOTIFY_WEBHOOK_URL` 配置后，系统会在任务创建、等待审核、失败等事件写通知日志，并尝试推送飞书 webhook
 5. `FEISHU_VERIFICATION_TOKEN` 用于飞书事件入口的最小 token 校验
+6. `FEISHU_ENCRYPT_KEY` 用于飞书事件入口签名校验；配置后会同时启用时间窗校验和进程内重放保护
+7. `MOBILE_ACCESS_TOKEN` 配置后，手机轻控制页会要求先登录，再通过短期 session cookie 访问
 
 ## 本地安装
 
@@ -188,6 +194,8 @@ POST /webhooks/feishu/events
 2. 当前实现会返回标准 JSON 结果，适合作为控制层后端验证
 3. 配置 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后，系统会尝试通过飞书应用消息接口把命令执行结果回发到原 `chat_id`
 4. 若未配置飞书应用凭据，则 `command_result` 会被记录为通知日志，但不会真实发回飞书
+5. 配置 `FEISHU_ENCRYPT_KEY` 后，会额外校验 `x-lark-request-timestamp`、`x-lark-request-nonce`、`x-lark-signature`
+6. 签名校验包含时间窗限制和进程内重放保护；`url_verification` challenge 仍允许直接通过
 
 ## 手机轻控制页
 
@@ -206,7 +214,8 @@ POST /mobile/jobs/{job_id}/action
 2. `POST /mobile/jobs` 使用表单方式创建任务，并重定向到详情页
 3. `GET /mobile/jobs/{job_id}` 展示任务状态、后端、素材概览和可执行动作
 4. `POST /mobile/jobs/{job_id}/action` 当前支持 `approve`、`retry`、`cancel`
-5. 这一层刻意保持无模板引擎、无前端构建依赖，便于直接部署在现有 API 服务中
+5. 配置 `MOBILE_ACCESS_TOKEN` 后，访问 `/mobile/*` 会先跳到 `/mobile/login`，登录成功后写入短期 session cookie
+6. 这一层刻意保持无模板引擎、无前端构建依赖，便于直接部署在现有 API 服务中
 
 ## 多后端出图建议
 
@@ -258,6 +267,8 @@ pytest -v
 23. 命令 token 校验与命令层审计
 24. 飞书应用消息回发与 `command_result` 通知
 25. 手机轻控制页与任务动作表单链路
+26. 飞书签名校验、时间窗校验与重放保护
+27. 手机轻控制页登录与短期 session
 
 ## 当前已知限制
 
@@ -265,9 +276,9 @@ pytest -v
 2. ComfyUI 工作流还是通用结构，未绑定具体节点模板。
 3. 第三方图像 API 当前是通用适配层，具体请求体和响应体可能还需按目标供应商细化。
 4. 当前还没有按后端区分更细的成本模型。
-5. 手机轻控制页当前是最小 HTML 入口，未接入登录态、用户隔离和更细粒度权限控制。
+5. 手机轻控制页当前只适合单用户场景，尚未接入多用户隔离、权限分级和注销管理。
 6. 当前飞书命令入口已可执行并返回 JSON；只有配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET` 后，才会真实尝试飞书对话回发。
-7. 当前飞书 webhook 仍是最小 token 校验，尚未补全更严格的签名校验与重放防护。
+7. 当前飞书重放保护是进程内缓存版，重启后不会保留历史 nonce；如果以后做多实例部署，需要换成 Redis 级别去重。
 
 ## 下一步建议
 
@@ -275,6 +286,6 @@ pytest -v
 2. 选一个真实第三方图像 API，细化 `third_party` provider 的字段映射
 3. 增加按 `image_backend` 分开的成本统计与重试策略
 4. 把 Worker 真正跑起来，做一次真实任务消费验证
-5. 补飞书 webhook 的签名校验、时间窗校验和重放保护
-6. 给手机轻控制页补简单鉴权、筛选和结果预览
+5. 给手机轻控制页补结果预览、筛选、退出登录和更细粒度操作保护
+6. 把飞书重放保护提升为 Redis 级别，适配多进程或多实例部署
 7. 视需要补 Feishu 命令 DSL、异步结果卡片和更细的通知策略

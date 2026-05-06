@@ -1,6 +1,9 @@
+import hashlib
+import hmac
 import json
+import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -11,6 +14,7 @@ from app.core.config import load_settings
 
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+_SEEN_FEISHU_REQUESTS = {}
 
 
 def get_command_router(
@@ -26,11 +30,17 @@ def get_command_router(
 
 
 @router.post("/feishu/events")
-def handle_feishu_events(
-    payload: dict,
+async def handle_feishu_events(
+    request: Request,
     db: Session = Depends(get_db),
     command_router: CommandRouter = Depends(get_command_router),
 ):
+    raw_body = await request.body()
+    try:
+        payload = json.loads(raw_body.decode("utf-8") or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid request json") from exc
+
     if payload.get("type") == "url_verification" and "challenge" in payload:
         return {"challenge": payload["challenge"]}
 
@@ -40,6 +50,7 @@ def handle_feishu_events(
         token = payload.get("token")
         if token != verification_token:
             raise HTTPException(status_code=403, detail="invalid feishu verification token")
+    _verify_feishu_signature(raw_body, request.headers, settings)
 
     event = payload.get("event") or {}
     message = event.get("message") or {}
@@ -88,3 +99,45 @@ def _format_command_result_message(result):
     if result.status:
         lines.append("status={0}".format(result.status))
     return "\n".join(lines)
+
+
+def _verify_feishu_signature(raw_body, headers, settings):
+    encrypt_key = (settings.feishu_encrypt_key or "").strip()
+    if not encrypt_key:
+        return
+
+    timestamp = headers.get("x-lark-request-timestamp", "").strip()
+    nonce = headers.get("x-lark-request-nonce", "").strip()
+    signature = headers.get("x-lark-signature", "").strip()
+    if not timestamp or not nonce or not signature:
+        raise HTTPException(status_code=403, detail="missing feishu signature headers")
+
+    try:
+        request_timestamp = int(timestamp)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="invalid feishu timestamp") from exc
+
+    now = int(time.time())
+    if abs(now - request_timestamp) > settings.feishu_webhook_max_age_seconds:
+        raise HTTPException(status_code=403, detail="expired feishu request")
+
+    expected_signature = hashlib.sha256(
+        timestamp.encode("utf-8") + nonce.encode("utf-8") + encrypt_key.encode("utf-8") + raw_body
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected_signature):
+        raise HTTPException(status_code=403, detail="invalid feishu signature")
+
+    replay_key = "{0}:{1}:{2}".format(timestamp, nonce, signature)
+    _cleanup_seen_requests(now, settings.feishu_webhook_max_age_seconds)
+    if replay_key in _SEEN_FEISHU_REQUESTS:
+        raise HTTPException(status_code=403, detail="replayed feishu request")
+    _SEEN_FEISHU_REQUESTS[replay_key] = now
+
+
+def _cleanup_seen_requests(now, ttl_seconds):
+    expired_keys = []
+    for replay_key, seen_at in _SEEN_FEISHU_REQUESTS.items():
+        if now - seen_at > ttl_seconds:
+            expired_keys.append(replay_key)
+    for replay_key in expired_keys:
+        _SEEN_FEISHU_REQUESTS.pop(replay_key, None)

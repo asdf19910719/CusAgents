@@ -15,7 +15,11 @@ def clear_settings_env(monkeypatch):
         "COMFYUI_BASE_URL",
         "OUTPUT_DIR",
         "FEISHU_NOTIFY_WEBHOOK_URL",
+        "FEISHU_ENCRYPT_KEY",
         "FEISHU_VERIFICATION_TOKEN",
+        "FEISHU_WEBHOOK_MAX_AGE_SECONDS",
+        "MOBILE_ACCESS_TOKEN",
+        "MOBILE_SESSION_MAX_AGE_SECONDS",
     )
     for key in keys:
         monkeypatch.delenv(key, raising=False)
@@ -37,10 +41,14 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.output_dir == "./output"
     assert settings.third_party_image_api_path == "/images/generations"
     assert settings.feishu_notify_webhook_url == ""
+    assert settings.feishu_encrypt_key == ""
     assert settings.feishu_app_id == ""
     assert settings.feishu_app_secret == ""
     assert settings.feishu_open_base_url == "https://open.feishu.cn/open-apis"
     assert settings.feishu_verification_token == ""
+    assert settings.feishu_webhook_max_age_seconds == 300
+    assert settings.mobile_access_token == ""
+    assert settings.mobile_session_max_age_seconds == 28800
 
 
 def test_settings_require_llm_api_key(monkeypatch):

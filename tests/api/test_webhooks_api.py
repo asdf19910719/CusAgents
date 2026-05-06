@@ -1,4 +1,6 @@
 import json
+import hashlib
+import time
 
 from fastapi.testclient import TestClient
 
@@ -149,3 +151,131 @@ def test_feishu_event_callback_rejects_invalid_verification_token(monkeypatch):
     )
 
     assert response.status_code == 403
+
+
+def test_feishu_url_verification_bypasses_signature_check(monkeypatch):
+    monkeypatch.setenv("FEISHU_ENCRYPT_KEY", "encrypt-key")
+    client = TestClient(app)
+
+    response = client.post(
+        "/webhooks/feishu/events",
+        json={"type": "url_verification", "challenge": "abc123"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"challenge": "abc123"}
+
+
+def test_feishu_event_callback_accepts_valid_signature(monkeypatch):
+    class FakeNotificationService:
+        def notify_job_event(self, session, job, event_type, message, target_id=None):
+            return None
+
+    monkeypatch.setenv("FEISHU_ENCRYPT_KEY", "encrypt-key")
+    monkeypatch.setenv("FEISHU_WEBHOOK_MAX_AGE_SECONDS", "300")
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+    payload = {
+        "type": "event_callback",
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_test_user"}},
+            "message": {
+                "chat_id": "oc_test_chat",
+                "message_type": "text",
+                "content": json.dumps({"text": "/health"}),
+            },
+        },
+    }
+    raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    timestamp = str(int(time.time()))
+    nonce = "nonce-1"
+    signature = hashlib.sha256(timestamp.encode("utf-8") + nonce.encode("utf-8") + b"encrypt-key" + raw_body).hexdigest()
+
+    try:
+        response = client.post(
+            "/webhooks/feishu/events",
+            content=raw_body,
+            headers={
+                "content-type": "application/json",
+                "x-lark-request-timestamp": timestamp,
+                "x-lark-request-nonce": nonce,
+                "x-lark-signature": signature,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+def test_feishu_event_callback_rejects_invalid_signature(monkeypatch):
+    monkeypatch.setenv("FEISHU_ENCRYPT_KEY", "encrypt-key")
+    monkeypatch.setenv("FEISHU_WEBHOOK_MAX_AGE_SECONDS", "300")
+    client = TestClient(app)
+    payload = {
+        "type": "event_callback",
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_test_user"}},
+            "message": {
+                "chat_id": "oc_test_chat",
+                "message_type": "text",
+                "content": json.dumps({"text": "/health"}),
+            },
+        },
+    }
+    raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+    response = client.post(
+        "/webhooks/feishu/events",
+        content=raw_body,
+        headers={
+            "content-type": "application/json",
+            "x-lark-request-timestamp": str(int(time.time())),
+            "x-lark-request-nonce": "nonce-1",
+            "x-lark-signature": "bad-signature",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_feishu_event_callback_rejects_replayed_signature(monkeypatch):
+    class FakeNotificationService:
+        def notify_job_event(self, session, job, event_type, message, target_id=None):
+            return None
+
+    monkeypatch.setenv("FEISHU_ENCRYPT_KEY", "encrypt-key")
+    monkeypatch.setenv("FEISHU_WEBHOOK_MAX_AGE_SECONDS", "300")
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+    payload = {
+        "type": "event_callback",
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_test_user"}},
+            "message": {
+                "chat_id": "oc_test_chat",
+                "message_type": "text",
+                "content": json.dumps({"text": "/health"}),
+            },
+        },
+    }
+    raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    timestamp = str(int(time.time()))
+    nonce = "nonce-replay"
+    signature = hashlib.sha256(timestamp.encode("utf-8") + nonce.encode("utf-8") + b"encrypt-key" + raw_body).hexdigest()
+    headers = {
+        "content-type": "application/json",
+        "x-lark-request-timestamp": timestamp,
+        "x-lark-request-nonce": nonce,
+        "x-lark-signature": signature,
+    }
+
+    try:
+        first = client.post("/webhooks/feishu/events", content=raw_body, headers=headers)
+        second = client.post("/webhooks/feishu/events", content=raw_body, headers=headers)
+    finally:
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert first.status_code == 200
+    assert second.status_code == 403

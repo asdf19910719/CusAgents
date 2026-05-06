@@ -104,3 +104,42 @@ def test_mobile_job_action_can_approve_and_redirect():
     assert action_response.status_code == 303
     assert action_response.headers["location"] == "/mobile/jobs/{0}".format(job_id)
     assert "completed" in detail_response.text
+
+
+def test_mobile_jobs_page_redirects_to_login_when_access_token_is_configured(monkeypatch):
+    monkeypatch.setenv("MOBILE_ACCESS_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    response = client.get("/mobile/jobs", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/mobile/login"
+
+
+def test_mobile_login_sets_session_and_allows_access(monkeypatch):
+    monkeypatch.setenv("MOBILE_ACCESS_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    login_page = client.get("/mobile/login")
+    login_response = client.post(
+        "/mobile/login",
+        data={"access_token": "secret-token"},
+        follow_redirects=False,
+    )
+    jobs_page = client.get("/mobile/jobs")
+
+    assert login_page.status_code == 200
+    assert "登录" in login_page.text
+    assert login_response.status_code == 303
+    assert login_response.headers["location"] == "/mobile/jobs"
+    assert jobs_page.status_code == 200
+    assert "移动控制台" in jobs_page.text
+
+
+def test_mobile_login_rejects_invalid_token(monkeypatch):
+    monkeypatch.setenv("MOBILE_ACCESS_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    response = client.post("/mobile/login", data={"access_token": "bad-token"})
+
+    assert response.status_code == 403
