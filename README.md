@@ -15,6 +15,7 @@
 4. Prompt 组装
 5. 按任务选择出图后端
 6. 质量检查、人工审核入口与成本统计
+7. 飞书通知出口与通知日志
 
 ## 当前技术栈
 
@@ -43,8 +44,9 @@
 11. `THIRD_PARTY_IMAGE_API_KEY`
 12. `THIRD_PARTY_IMAGE_MODEL`
 13. `THIRD_PARTY_IMAGE_API_PATH`
-14. `AUTO_ENQUEUE_JOBS`
-15. `QUEUE_NAME`
+14. `FEISHU_NOTIFY_WEBHOOK_URL`
+15. `AUTO_ENQUEUE_JOBS`
+16. `QUEUE_NAME`
 
 说明：
 
@@ -53,6 +55,7 @@
 3. 当前支持值：
    `comfyui_remote`
    `third_party`
+4. `FEISHU_NOTIFY_WEBHOOK_URL` 配置后，系统会在任务创建、等待审核、失败等事件写通知日志，并尝试推送飞书 webhook
 
 ## 本地安装
 
@@ -133,6 +136,22 @@ python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend 
 
 如果传入其它值，API 会直接返回 `422`，避免任务入库后才在 Worker 阶段失败。
 
+## 飞书通知出口
+
+当前已支持最小飞书通知出口：
+
+1. `POST /jobs` 创建任务后会写一条 `job_created` 通知记录
+2. Worker 执行结束进入 `waiting_review` 时会写 `job_waiting_review`
+3. Worker 执行失败时会写 `job_failed`
+
+如果配置：
+
+```text
+FEISHU_NOTIFY_WEBHOOK_URL=https://open.feishu.cn/...
+```
+
+系统会在写通知日志的同时尝试发送飞书 webhook 消息；未配置时，通知会被记录为 `skipped`，不会影响主任务流程。
+
 ## 多后端出图建议
 
 推荐的实际使用方式：
@@ -178,6 +197,7 @@ pytest -v
 18. 真实 RQ 入队烟测相关路径
 19. 运行期健康诊断
 20. 非法 `image_backend` 请求校验
+21. 飞书通知记录与状态变化通知
 
 ## 当前已知限制
 
@@ -185,6 +205,7 @@ pytest -v
 2. ComfyUI 工作流还是通用结构，未绑定具体节点模板。
 3. 第三方图像 API 当前是通用适配层，具体请求体和响应体可能还需按目标供应商细化。
 4. 当前还没有按后端区分更细的成本模型。
+5. 当前只完成了飞书通知出口，尚未实现飞书命令入口和手机控制页。
 
 ## 下一步建议
 
@@ -192,3 +213,4 @@ pytest -v
 2. 选一个真实第三方图像 API，细化 `third_party` provider 的字段映射
 3. 增加按 `image_backend` 分开的成本统计与重试策略
 4. 把 Worker 真正跑起来，做一次真实任务消费验证
+5. 按控制层方案继续补飞书命令入口与手机轻控制页

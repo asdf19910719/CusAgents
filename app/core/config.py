@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     third_party_image_api_key: str = Field(default="", alias="THIRD_PARTY_IMAGE_API_KEY")
     third_party_image_model: str = Field(default="", alias="THIRD_PARTY_IMAGE_MODEL")
     third_party_image_api_path: str = Field(default="/images/generations", alias="THIRD_PARTY_IMAGE_API_PATH")
+    feishu_notify_webhook_url: str = Field(default="", alias="FEISHU_NOTIFY_WEBHOOK_URL")
     auto_enqueue_jobs: bool = Field(default=False, alias="AUTO_ENQUEUE_JOBS")
     queue_name: str = Field(default="custom-agents", alias="QUEUE_NAME")
 

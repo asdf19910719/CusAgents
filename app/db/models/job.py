@@ -28,3 +28,6 @@ class Job(Base):
     step_runs: Mapped[list["StepRun"]] = relationship(back_populates="job", cascade="all, delete-orphan")
     assets: Mapped[list["Asset"]] = relationship(back_populates="job", cascade="all, delete-orphan")
     reviews: Mapped[list["Review"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    notifications: Mapped[list["OutboundNotification"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )

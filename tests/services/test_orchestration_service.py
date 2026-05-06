@@ -69,6 +69,21 @@ class FakeQualityService:
         return Result()
 
 
+class FakeNotificationService:
+    def __init__(self):
+        self.calls = []
+
+    def notify_job_event(self, session, job, event_type, message, target_id=None):
+        self.calls.append(
+            {
+                "job_id": job.id,
+                "event_type": event_type,
+                "message": message,
+                "target_id": target_id,
+            }
+        )
+
+
 def create_job(session):
     job = Job(
         request_id="req-orchestration",
@@ -88,12 +103,14 @@ def create_job(session):
 def test_orchestration_service_moves_job_to_waiting_review():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
+    notification_service = FakeNotificationService()
     service = OrchestrationService(
         outline_service=FakeOutlineService(),
         storyboard_service=FakeStoryboardService(),
         prompt_service=FakePromptService(),
         image_service=FakeImageService(),
         quality_service=FakeQualityService(),
+        notification_service=notification_service,
     )
 
     with Session(engine) as session:
@@ -103,17 +120,20 @@ def test_orchestration_service_moves_job_to_waiting_review():
 
         assert result.status == JobStatus.WAITING_REVIEW
         assert result.current_step == "review"
+        assert notification_service.calls[-1]["event_type"] == "job_waiting_review"
 
 
 def test_orchestration_service_marks_job_failed_when_image_step_raises():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
+    notification_service = FakeNotificationService()
     service = OrchestrationService(
         outline_service=FakeOutlineService(),
         storyboard_service=FakeStoryboardService(),
         prompt_service=FakePromptService(),
         image_service=FakeImageService(should_fail=True),
         quality_service=FakeQualityService(),
+        notification_service=notification_service,
     )
 
     with Session(engine) as session:
@@ -125,3 +145,4 @@ def test_orchestration_service_marks_job_failed_when_image_step_raises():
         session.refresh(job)
         assert job.status == JobStatus.FAILED
         assert job.current_step == "image"
+        assert notification_service.calls[-1]["event_type"] == "job_failed"

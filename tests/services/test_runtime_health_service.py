@@ -14,6 +14,7 @@ class FakeSession:
 
 def test_runtime_health_service_reports_reachable_backends():
     settings = Settings(
+        _env_file=None,
         LLM_API_KEY="real-key",
         LLM_BASE_URL="https://llm.example.com/v1",
         REDIS_URL="redis://127.0.0.1:6379/0",
@@ -44,6 +45,7 @@ def test_runtime_health_service_reports_reachable_backends():
 
 def test_runtime_health_service_marks_missing_or_unreachable_dependencies():
     settings = Settings(
+        _env_file=None,
         LLM_API_KEY="placeholder-llm-api-key",
         LLM_BASE_URL="https://llm.example.com/v1",
         REDIS_URL="redis://127.0.0.1:6379/0",

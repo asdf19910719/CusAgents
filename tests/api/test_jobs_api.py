@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.api.routes.jobs import get_job_dispatcher
+from app.api.routes.jobs import get_job_dispatcher, get_notification_service
 from app.main import app
 
 
@@ -76,6 +76,47 @@ def test_create_job_enqueues_when_dispatcher_is_overridden():
     assert payload["dispatch_status"] == "enqueued"
     assert payload["queue_name"] == "test-queue"
     assert dispatcher.calls == [payload["id"]]
+
+
+def test_create_job_sends_notification_when_notification_service_is_overridden():
+    class FakeDispatcher:
+        def enqueue_job(self, job_id):
+            return {"dispatch_status": "enqueued", "queue_name": "test-queue"}
+
+    class FakeNotificationService:
+        def __init__(self):
+            self.calls = []
+
+        def notify_job_event(self, session, job, event_type, message, target_id=None):
+            self.calls.append(
+                {
+                    "job_id": job.id,
+                    "event_type": event_type,
+                    "message": message,
+                    "target_id": target_id,
+                }
+            )
+
+    notification_service = FakeNotificationService()
+    app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
+    app.dependency_overrides[get_notification_service] = lambda: notification_service
+    client = TestClient(app)
+
+    try:
+        create_response = client.post(
+            "/jobs",
+            json={
+                "topic": "冷血剑客复仇",
+                "style_preset": "cinematic",
+                "target_shot_count": 2,
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_dispatcher, None)
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert create_response.status_code == 201
+    assert notification_service.calls[0]["event_type"] == "job_created"
 
 
 def test_retry_approve_and_cancel_job():

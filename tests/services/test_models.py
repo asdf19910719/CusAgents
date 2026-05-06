@@ -7,6 +7,7 @@ from app.db.base import Base
 from app.db.models.asset import Asset
 from app.db.models.job import Job
 from app.db.models.llm_cache import LlmCache
+from app.db.models.outbound_notification import OutboundNotification
 from app.db.models.prompt_template import PromptTemplate
 from app.db.models.review import Review
 from app.db.models.step_run import StepRun
@@ -80,8 +81,17 @@ def test_core_models_can_be_created_and_related():
             notes="looks good",
             reviewed_by="tester",
         )
+        notification = OutboundNotification(
+            job_id=job.id,
+            channel_type="feishu",
+            target_id="chat-123",
+            event_type="job_created",
+            payload_json={"message": "任务已创建"},
+            status="sent",
+            retry_count=0,
+        )
 
-        session.add_all([step_run, cache, template, asset, review])
+        session.add_all([step_run, cache, template, asset, review, notification])
         session.commit()
         session.refresh(job)
 
@@ -93,5 +103,7 @@ def test_core_models_can_be_created_and_related():
         assert job.assets[0].file_path == "output/shot-1.png"
         assert len(job.reviews) == 1
         assert job.reviews[0].result == "approved"
+        assert len(job.notifications) == 1
+        assert job.notifications[0].event_type == "job_created"
         assert session.get(LlmCache, "outline:abc").response_payload["summary"] == "cached"
         assert session.query(PromptTemplate).filter_by(template_name="outline").one().is_active is True

@@ -6,6 +6,7 @@ from app.providers.image.workflow_builder import WorkflowBuilder
 from app.providers.llm.factory import create_llm_provider
 from app.services.cache_service import CacheService
 from app.services.image_service import ImageGenerationService
+from app.services.notification_service import FeishuWebhookNotifier, NotificationService
 from app.services.orchestration_service import OrchestrationService
 from app.services.outline_service import OutlineService
 from app.services.prompt_service import PromptAssemblyService, PromptTemplateService
@@ -44,6 +45,13 @@ def build_image_providers(settings):
     return providers
 
 
+def build_notification_service(settings):
+    notifier = None
+    if settings.feishu_notify_webhook_url:
+        notifier = FeishuWebhookNotifier(webhook_url=settings.feishu_notify_webhook_url)
+    return NotificationService(notifier=notifier)
+
+
 def build_orchestration_service(settings):
     llm_provider = create_llm_provider(settings)
     prompt_service = PromptTemplateService(template_root="app/templates")
@@ -51,6 +59,7 @@ def build_orchestration_service(settings):
     outline_service = OutlineService(llm_provider, prompt_service, cache_service)
     storyboard_service = StoryboardService(llm_provider, prompt_service, cache_service)
     prompt_assembly_service = PromptAssemblyService(prompt_service)
+    notification_service = build_notification_service(settings)
     image_service = ImageGenerationService(
         providers=build_image_providers(settings),
         default_backend=settings.image_backend,
@@ -63,4 +72,5 @@ def build_orchestration_service(settings):
         prompt_service=prompt_assembly_service,
         image_service=image_service,
         quality_service=quality_service,
+        notification_service=notification_service,
     )

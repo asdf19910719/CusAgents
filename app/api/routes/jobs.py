@@ -5,11 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.config import load_settings
 from app.core.enums import JobStatus
 from app.db.models.job import Job
 from app.db.models.review import Review
 from app.db.models.step_run import StepRun
 from app.schemas.job import JobCreateRequest
+from app.services.factory import build_notification_service
 from app.workers.dispatcher import build_job_dispatcher
 
 
@@ -18,6 +20,11 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 def get_job_dispatcher():
     return build_job_dispatcher()
+
+
+def get_notification_service():
+    settings = load_settings(allow_placeholder_llm_api_key=True)
+    return build_notification_service(settings)
 
 
 def safe_enqueue(dispatcher, job_id):
@@ -41,6 +48,7 @@ def create_job(
     payload: JobCreateRequest,
     db: Session = Depends(get_db),
     dispatcher=Depends(get_job_dispatcher),
+    notification_service=Depends(get_notification_service),
 ):
     job = Job(
         request_id=str(uuid.uuid4()),
@@ -55,6 +63,12 @@ def create_job(
     db.add(job)
     db.commit()
     db.refresh(job)
+    notification_service.notify_job_event(
+        db,
+        job,
+        event_type="job_created",
+        message="任务已创建，job_id={0}".format(job.id),
+    )
     dispatch_result = safe_enqueue(dispatcher, job.id)
     return {
         "id": job.id,
