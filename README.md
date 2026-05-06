@@ -16,6 +16,7 @@
 5. 按任务选择出图后端
 6. 质量检查、人工审核入口与成本统计
 7. 飞书通知出口与通知日志
+8. 飞书命令入口与命令审计
 
 ## 当前技术栈
 
@@ -45,8 +46,9 @@
 12. `THIRD_PARTY_IMAGE_MODEL`
 13. `THIRD_PARTY_IMAGE_API_PATH`
 14. `FEISHU_NOTIFY_WEBHOOK_URL`
-15. `AUTO_ENQUEUE_JOBS`
-16. `QUEUE_NAME`
+15. `FEISHU_VERIFICATION_TOKEN`
+16. `AUTO_ENQUEUE_JOBS`
+17. `QUEUE_NAME`
 
 说明：
 
@@ -56,6 +58,7 @@
    `comfyui_remote`
    `third_party`
 4. `FEISHU_NOTIFY_WEBHOOK_URL` 配置后，系统会在任务创建、等待审核、失败等事件写通知日志，并尝试推送飞书 webhook
+5. `FEISHU_VERIFICATION_TOKEN` 用于飞书事件入口的最小 token 校验
 
 ## 本地安装
 
@@ -152,6 +155,38 @@ FEISHU_NOTIFY_WEBHOOK_URL=https://open.feishu.cn/...
 
 系统会在写通知日志的同时尝试发送飞书 webhook 消息；未配置时，通知会被记录为 `skipped`，不会影响主任务流程。
 
+## 飞书命令入口
+
+当前已支持最小飞书事件入口：
+
+```text
+POST /webhooks/feishu/events
+```
+
+当前支持：
+
+1. `url_verification` challenge 校验
+2. 文本命令解析
+3. 命令执行审计
+
+第一版支持的命令：
+
+```text
+/create topic="赛博 武侠" style=cinematic shots=2 backend=third_party
+/status job=123
+/retry job=123
+/approve job=123
+/cancel job=123
+/assets job=123
+/health
+```
+
+说明：
+
+1. 当前入口按飞书事件回调格式接收文本消息
+2. 当前实现会返回标准 JSON 结果，适合作为控制层后端验证
+3. 真正的“在飞书里直接把结果回给用户”还需要后续补飞书应用消息发送 API，不在本阶段范围内
+
 ## 多后端出图建议
 
 推荐的实际使用方式：
@@ -198,6 +233,8 @@ pytest -v
 19. 运行期健康诊断
 20. 非法 `image_backend` 请求校验
 21. 飞书通知记录与状态变化通知
+22. 飞书命令解析与 webhook 入口
+23. 命令 token 校验与命令层审计
 
 ## 当前已知限制
 
@@ -206,6 +243,7 @@ pytest -v
 3. 第三方图像 API 当前是通用适配层，具体请求体和响应体可能还需按目标供应商细化。
 4. 当前还没有按后端区分更细的成本模型。
 5. 当前只完成了飞书通知出口，尚未实现飞书命令入口和手机控制页。
+6. 当前飞书命令入口已可执行并返回 JSON，但尚未接入飞书应用消息发送接口做对话内回复。
 
 ## 下一步建议
 
@@ -214,3 +252,4 @@ pytest -v
 3. 增加按 `image_backend` 分开的成本统计与重试策略
 4. 把 Worker 真正跑起来，做一次真实任务消费验证
 5. 按控制层方案继续补飞书命令入口与手机轻控制页
+6. 补飞书应用消息回发与更完整的签名校验

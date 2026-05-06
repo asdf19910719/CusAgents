@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.db.models.asset import Asset
+from app.db.models.command_log import CommandLog
 from app.db.models.job import Job
 from app.db.models.llm_cache import LlmCache
 from app.db.models.outbound_notification import OutboundNotification
@@ -90,8 +91,18 @@ def test_core_models_can_be_created_and_related():
             status="sent",
             retry_count=0,
         )
+        command_log = CommandLog(
+            request_id="cmd-1",
+            channel_type="feishu",
+            sender_id="user-123",
+            command_name="create_job",
+            raw_text="/create topic=冷血剑客复仇 style=cinematic shots=8",
+            arguments_json={"topic": "冷血剑客复仇"},
+            result_status="success",
+            related_job_id=job.id,
+        )
 
-        session.add_all([step_run, cache, template, asset, review, notification])
+        session.add_all([step_run, cache, template, asset, review, notification, command_log])
         session.commit()
         session.refresh(job)
 
@@ -105,5 +116,6 @@ def test_core_models_can_be_created_and_related():
         assert job.reviews[0].result == "approved"
         assert len(job.notifications) == 1
         assert job.notifications[0].event_type == "job_created"
+        assert session.query(CommandLog).filter_by(command_name="create_job").one().result_status == "success"
         assert session.get(LlmCache, "outline:abc").response_payload["summary"] == "cached"
         assert session.query(PromptTemplate).filter_by(template_name="outline").one().is_active is True

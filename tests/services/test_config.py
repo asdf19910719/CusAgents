@@ -14,6 +14,8 @@ def clear_settings_env(monkeypatch):
         "LLM_DEFAULT_MODEL",
         "COMFYUI_BASE_URL",
         "OUTPUT_DIR",
+        "FEISHU_NOTIFY_WEBHOOK_URL",
+        "FEISHU_VERIFICATION_TOKEN",
     )
     for key in keys:
         monkeypatch.delenv(key, raising=False)
@@ -35,6 +37,7 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.output_dir == "./output"
     assert settings.third_party_image_api_path == "/images/generations"
     assert settings.feishu_notify_webhook_url == ""
+    assert settings.feishu_verification_token == ""
 
 
 def test_settings_require_llm_api_key(monkeypatch):
