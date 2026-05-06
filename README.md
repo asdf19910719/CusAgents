@@ -26,7 +26,8 @@
 4. `Redis + RQ`
 5. `httpx`
 6. `Jinja2`
-7. `pytest`
+7. `lark-oapi`
+8. `pytest`
 
 ## 环境变量
 
@@ -99,6 +100,21 @@ curl http://127.0.0.1:8000/admin/runtime/health
 ```bash
 python scripts/run_worker.py
 ```
+
+## 启动飞书长连接客户端
+
+如果不走公网 webhook，可以直接使用官方 SDK 长连接模式：
+
+```bash
+python scripts/run_feishu_long_connection.py
+```
+
+说明：
+
+1. 这条链路复用现有命令层，不替换 `POST /webhooks/feishu/events`
+2. 需要已配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`
+3. 适合“飞书发命令 -> 本地执行 -> 飞书收结果”的单机控制场景
+4. 如果飞书后台切换到长连接模式，就不再依赖公网回调 URL
 
 如果要让 `POST /jobs` 创建任务后自动入队，需要启用：
 
@@ -190,12 +206,13 @@ POST /webhooks/feishu/events
 
 说明：
 
-1. 当前入口按飞书事件回调格式接收文本消息
+1. 当前已同时支持 HTTP webhook 和 SDK 长连接两种入口
 2. 当前实现会返回标准 JSON 结果，适合作为控制层后端验证
 3. 配置 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后，系统会尝试通过飞书应用消息接口把命令执行结果回发到原 `chat_id`
 4. 若未配置飞书应用凭据，则 `command_result` 会被记录为通知日志，但不会真实发回飞书
 5. 配置 `FEISHU_ENCRYPT_KEY` 后，会额外校验 `x-lark-request-timestamp`、`x-lark-request-nonce`、`x-lark-signature`
 6. 签名校验包含时间窗限制和进程内重放保护；`url_verification` challenge 仍允许直接通过
+7. 长连接模式通过 `lark-oapi` 官方 SDK 接收 `p2_im_message_receive_v1` 事件，再转入当前 `CommandRouter`
 
 ## 手机轻控制页
 
@@ -269,6 +286,7 @@ pytest -v
 25. 手机轻控制页与任务动作表单链路
 26. 飞书签名校验、时间窗校验与重放保护
 27. 手机轻控制页登录与短期 session
+28. 飞书长连接命令入口与 SDK 客户端装配
 
 ## 当前已知限制
 
@@ -279,6 +297,7 @@ pytest -v
 5. 手机轻控制页当前只适合单用户场景，尚未接入多用户隔离、权限分级和注销管理。
 6. 当前飞书命令入口已可执行并返回 JSON；只有配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET` 后，才会真实尝试飞书对话回发。
 7. 当前飞书重放保护是进程内缓存版，重启后不会保留历史 nonce；如果以后做多实例部署，需要换成 Redis 级别去重。
+8. 飞书长连接当前只接了 `p2_im_message_receive_v1` 文本消息事件，还没有扩到卡片交互或更复杂事件类型。
 
 ## 下一步建议
 
@@ -289,3 +308,4 @@ pytest -v
 5. 给手机轻控制页补结果预览、筛选、退出登录和更细粒度操作保护
 6. 把飞书重放保护提升为 Redis 级别，适配多进程或多实例部署
 7. 视需要补 Feishu 命令 DSL、异步结果卡片和更细的通知策略
+8. 视飞书侧配置决定是否保留 webhook 与长连接双入口并存
