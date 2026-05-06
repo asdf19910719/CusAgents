@@ -189,6 +189,25 @@ POST /webhooks/feishu/events
 3. 配置 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后，系统会尝试通过飞书应用消息接口把命令执行结果回发到原 `chat_id`
 4. 若未配置飞书应用凭据，则 `command_result` 会被记录为通知日志，但不会真实发回飞书
 
+## 手机轻控制页
+
+当前已提供最小手机控制入口：
+
+```text
+GET  /mobile/jobs
+POST /mobile/jobs
+GET  /mobile/jobs/{job_id}
+POST /mobile/jobs/{job_id}/action
+```
+
+说明：
+
+1. `GET /mobile/jobs` 提供移动端任务列表和创建表单
+2. `POST /mobile/jobs` 使用表单方式创建任务，并重定向到详情页
+3. `GET /mobile/jobs/{job_id}` 展示任务状态、后端、素材概览和可执行动作
+4. `POST /mobile/jobs/{job_id}/action` 当前支持 `approve`、`retry`、`cancel`
+5. 这一层刻意保持无模板引擎、无前端构建依赖，便于直接部署在现有 API 服务中
+
 ## 多后端出图建议
 
 推荐的实际使用方式：
@@ -238,6 +257,7 @@ pytest -v
 22. 飞书命令解析与 webhook 入口
 23. 命令 token 校验与命令层审计
 24. 飞书应用消息回发与 `command_result` 通知
+25. 手机轻控制页与任务动作表单链路
 
 ## 当前已知限制
 
@@ -245,8 +265,9 @@ pytest -v
 2. ComfyUI 工作流还是通用结构，未绑定具体节点模板。
 3. 第三方图像 API 当前是通用适配层，具体请求体和响应体可能还需按目标供应商细化。
 4. 当前还没有按后端区分更细的成本模型。
-5. 当前只完成了飞书通知出口，尚未实现飞书命令入口和手机控制页。
+5. 手机轻控制页当前是最小 HTML 入口，未接入登录态、用户隔离和更细粒度权限控制。
 6. 当前飞书命令入口已可执行并返回 JSON；只有配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET` 后，才会真实尝试飞书对话回发。
+7. 当前飞书 webhook 仍是最小 token 校验，尚未补全更严格的签名校验与重放防护。
 
 ## 下一步建议
 
@@ -254,6 +275,6 @@ pytest -v
 2. 选一个真实第三方图像 API，细化 `third_party` provider 的字段映射
 3. 增加按 `image_backend` 分开的成本统计与重试策略
 4. 把 Worker 真正跑起来，做一次真实任务消费验证
-5. 按控制层方案继续补飞书命令入口与手机轻控制页
-6. 补飞书应用消息回发与更完整的签名校验
-7. 继续做手机轻控制页与更完整的飞书签名校验
+5. 补飞书 webhook 的签名校验、时间窗校验和重放保护
+6. 给手机轻控制页补简单鉴权、筛选和结果预览
+7. 视需要补 Feishu 命令 DSL、异步结果卡片和更细的通知策略
