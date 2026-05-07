@@ -60,6 +60,7 @@ class CommandRouter:
             style_preset=arguments["style_preset"],
             target_shot_count=arguments["target_shot_count"],
             image_backend=arguments["image_backend"],
+            notification_target_id=command.chat_id,
             status="pending",
             idempotency_key=str(uuid.uuid4()),
             current_step="outline",

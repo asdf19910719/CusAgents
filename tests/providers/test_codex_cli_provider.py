@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 from app.providers.image.codex_cli_provider import CodexCliClient, CodexCliImageProvider
 
@@ -116,3 +117,57 @@ def test_codex_cli_client_falls_back_to_generated_images_directory(tmp_path):
     assert generated_path.read_bytes() == b"generated-from-codex"
     assert "source_generated_image" in metadata
     assert metadata["source_generated_image"].endswith("ig_test.png")
+
+
+def test_codex_cli_client_times_out_with_clear_error(tmp_path):
+    def runner(command, cwd, capture_output, text, check, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs["timeout"])
+
+    client = CodexCliClient(
+        command_name="codex",
+        model_name="",
+        workdir=str(tmp_path),
+        runner=runner,
+        timeout_seconds=12,
+    )
+
+    try:
+        client.generate_image_file(prompt="generate a test image", shot_index=4)
+        assert False, "expected timeout"
+    except RuntimeError as exc:
+        assert "timed out after 12 seconds" in str(exc)
+
+
+def test_codex_cli_provider_normalizes_storyboard_instruction_prompt(tmp_path):
+    output_file = tmp_path / "generated.png"
+    output_file.write_bytes(b"fake-png")
+    runner = FakeRunner(output_text=str(output_file))
+    client = CodexCliClient(
+        command_name="codex",
+        model_name="",
+        workdir=str(tmp_path),
+        runner=runner,
+    )
+    provider = CodexCliImageProvider(client=client, backend_name="codex_cli")
+
+    provider.generate_image(
+        shot_index=5,
+        positive_prompt=(
+            'Create a shot prompt for shot 1.\n'
+            'Scene: "Close-up of a photograph on a wooden table"\n'
+            'Subject: "Man\'s trembling fingers and a photograph of a smiling woman"\n'
+            'Action: "Fingers drift into frame."\n'
+            'Camera: "Static close-up"\n'
+            'Lighting: "Low-key"\n'
+            'Emotion: "Tension"\n'
+            'Return positive and negative prompts.'
+        ),
+        negative_prompt="blurry",
+        style_preset="minimal",
+        seed=1005,
+    )
+
+    prompt = " ".join(runner.calls[0]["command"])
+    assert "Create a shot prompt" not in prompt
+    assert "Close-up of a photograph on a wooden table" in prompt
+    assert "Static close-up" in prompt

@@ -12,6 +12,10 @@ def clear_settings_env(monkeypatch):
         "LLM_BASE_URL",
         "LLM_API_KEY",
         "LLM_DEFAULT_MODEL",
+        "LLM_TIMEOUT_SECONDS",
+        "LLM_RETRY_ATTEMPTS",
+        "THIRD_PARTY_IMAGE_TIMEOUT_SECONDS",
+        "THIRD_PARTY_IMAGE_RETRY_ATTEMPTS",
         "COMFYUI_BASE_URL",
         "OUTPUT_DIR",
         "FEISHU_NOTIFY_WEBHOOK_URL",
@@ -22,6 +26,7 @@ def clear_settings_env(monkeypatch):
         "MOBILE_SESSION_MAX_AGE_SECONDS",
         "CODEX_CLI_COMMAND",
         "CODEX_CLI_MODEL",
+        "CODEX_CLI_TIMEOUT_SECONDS",
         )
     for key in keys:
         monkeypatch.delenv(key, raising=False)
@@ -39,9 +44,13 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.llm_base_url == "https://api.openai.com/v1"
     assert settings.llm_api_key == "test-key"
     assert settings.llm_default_model == "gpt-4.1-mini"
+    assert settings.llm_timeout_seconds == 90.0
+    assert settings.llm_retry_attempts == 1
     assert settings.comfyui_base_url == "http://127.0.0.1:8188"
     assert settings.output_dir == "./output"
     assert settings.third_party_image_api_path == "/images/generations"
+    assert settings.third_party_image_timeout_seconds == 180.0
+    assert settings.third_party_image_retry_attempts == 1
     assert settings.feishu_notify_webhook_url == ""
     assert settings.feishu_encrypt_key == ""
     assert settings.feishu_app_id == ""
@@ -53,6 +62,7 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.mobile_session_max_age_seconds == 28800
     assert settings.codex_cli_command == "codex"
     assert settings.codex_cli_model == ""
+    assert settings.codex_cli_timeout_seconds == 180
 
 
 def test_settings_require_llm_api_key(monkeypatch):

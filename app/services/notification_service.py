@@ -1,3 +1,5 @@
+import json
+
 import httpx
 
 from app.db.models.outbound_notification import OutboundNotification
@@ -20,10 +22,15 @@ class FeishuAppMessageNotifier:
             json={
                 "receive_id": target_id,
                 "msg_type": "text",
-                "content": "{\"text\":\"" + message.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}",
+                "content": json.dumps({"text": message}, ensure_ascii=False),
             },
         )
-        response.raise_for_status()
+        if response.is_error:
+            raise httpx.HTTPStatusError(
+                "Feishu app message send failed: {0}".format(response.text),
+                request=response.request,
+                response=response,
+            )
         return response.json()
 
     def _get_tenant_access_token(self):
@@ -65,10 +72,11 @@ class NotificationService:
         self.default_channel_type = default_channel_type
 
     def notify_job_event(self, session, job, event_type, message, target_id=None):
+        resolved_target_id = target_id or getattr(job, "notification_target_id", None)
         record = OutboundNotification(
             job_id=getattr(job, "id", None),
             channel_type=self.default_channel_type,
-            target_id=target_id,
+            target_id=resolved_target_id,
             event_type=event_type,
             payload_json={"message": message},
             status="pending",
@@ -84,8 +92,15 @@ class NotificationService:
             session.refresh(record)
             return record
 
+        if resolved_target_id is None and isinstance(self.notifier, FeishuAppMessageNotifier):
+            record.status = "skipped"
+            record.error_message = None
+            session.commit()
+            session.refresh(record)
+            return record
+
         try:
-            response_payload = self.notifier.send_message(message, target_id=target_id)
+            response_payload = self.notifier.send_message(message, target_id=resolved_target_id)
             record.status = "sent"
             record.payload_json = {
                 "message": message,

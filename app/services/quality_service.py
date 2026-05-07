@@ -22,6 +22,10 @@ class QualityService:
             return QualityResult("failed", "prompt count mismatch", Decimal("0.00"))
         if len(storyboard.shots) != len(assets):
             return QualityResult("failed", "asset count mismatch", Decimal("0.00"))
+        for asset in assets:
+            status = asset.get("status") if isinstance(asset, dict) else getattr(asset, "status", None)
+            if status != "completed":
+                return QualityResult("failed", "asset generation failed", Decimal("0.00"))
         for prompt in prompts:
             if not prompt.positive_prompt or not prompt.negative_prompt:
                 return QualityResult("failed", "empty prompt detected", Decimal("0.00"))

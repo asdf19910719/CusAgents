@@ -31,6 +31,20 @@ def build_sequence_transport(payloads, seen_requests):
     return httpx.MockTransport(handler)
 
 
+def build_timeout_then_success_transport(payload, seen_requests):
+    state = {"count": 0}
+
+    def handler(request):
+        assert request.method == "POST"
+        seen_requests.append(request)
+        if state["count"] == 0:
+            state["count"] += 1
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(200, json=payload)
+
+    return httpx.MockTransport(handler)
+
+
 def test_generate_text_parses_content_and_usage():
     payload = {
         "choices": [
@@ -184,3 +198,37 @@ def test_estimate_cost_returns_decimal_value():
 
     assert isinstance(cost, Decimal)
     assert cost >= Decimal("0.0000")
+
+
+def test_generate_text_retries_once_on_read_timeout():
+    seen_requests = []
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "Recovered after retry."
+                }
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+        },
+    }
+    client = httpx.Client(
+        transport=build_timeout_then_success_transport(payload, seen_requests),
+        base_url="https://example.com",
+    )
+    provider = OpenAICompatibleProvider(
+        base_url="https://example.com",
+        api_key="test-key",
+        default_model="demo-model",
+        http_client=client,
+        retry_attempts=1,
+    )
+
+    result = provider.generate_text("Retry on timeout once.")
+
+    assert result.content == "Recovered after retry."
+    assert len(seen_requests) == 2

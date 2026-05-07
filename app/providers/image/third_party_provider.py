@@ -1,4 +1,5 @@
 import base64
+import re
 
 from app.providers.image.base import BaseImageProvider, ImageGenerationResult
 
@@ -9,9 +10,7 @@ class ThirdPartyImageProvider(BaseImageProvider):
         self.backend_name = backend_name
 
     def generate_image(self, shot_index, positive_prompt, negative_prompt, style_preset, seed):
-        prompt = positive_prompt
-        if style_preset:
-            prompt = "Style: {0}\n{1}".format(style_preset, prompt)
+        prompt = self._normalize_prompt(positive_prompt, style_preset)
         if negative_prompt:
             prompt = "{0}\nAvoid: {1}".format(prompt, negative_prompt)
         payload = {
@@ -42,3 +41,62 @@ class ThirdPartyImageProvider(BaseImageProvider):
                 "response_payload": response,
             },
         )
+
+    def _normalize_prompt(self, positive_prompt, style_preset):
+        source_text = (positive_prompt or "").strip()
+        if not source_text:
+            return "Create a clean storyboard frame."
+        extracted = self._extract_structured_fields(source_text)
+        if not extracted:
+            if style_preset:
+                return "Style: {0}\n{1}".format(style_preset, source_text)
+            return source_text
+        segments = []
+        if style_preset:
+            segments.append("Storyboard frame in {0} style.".format(style_preset))
+        scene = extracted.get("scene")
+        subject = extracted.get("subject")
+        action = extracted.get("action")
+        camera = extracted.get("camera")
+        lighting = extracted.get("lighting")
+        emotion = extracted.get("emotion")
+        if scene:
+            segments.append(scene.rstrip(".") + ".")
+        if subject:
+            segments.append("Subject: " + subject.rstrip(".") + ".")
+        if action:
+            segments.append("Action: " + action.rstrip(".") + ".")
+        if camera:
+            segments.append("Camera: " + camera.rstrip(".") + ".")
+        if lighting:
+            segments.append("Lighting: " + lighting.rstrip(".") + ".")
+        if emotion:
+            segments.append("Mood: " + emotion.rstrip(".") + ".")
+        prompt = " ".join(segments).strip()
+        if len(prompt) > 500:
+            prompt = prompt[:500].rstrip() + "."
+        return prompt
+
+    def _extract_structured_fields(self, text):
+        mapping = {
+            "scene": "scene",
+            "subject": "subject",
+            "action": "action",
+            "camera": "camera",
+            "lighting": "lighting",
+            "emotion": "emotion",
+        }
+        extracted = {}
+        for line in text.splitlines():
+            normalized = line.strip()
+            if not normalized or ":" not in normalized:
+                continue
+            key, value = normalized.split(":", 1)
+            field_name = mapping.get(key.strip().lower())
+            if not field_name:
+                continue
+            cleaned = value.strip().strip('"').strip()
+            cleaned = re.sub(r"\s+", " ", cleaned)
+            if cleaned:
+                extracted[field_name] = cleaned
+        return extracted

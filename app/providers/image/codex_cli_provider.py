@@ -1,4 +1,5 @@
 import subprocess
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from shutil import copyfile
@@ -8,11 +9,20 @@ from app.providers.image.base import BaseImageProvider, ImageGenerationResult
 
 
 class CodexCliClient:
-    def __init__(self, command_name, model_name="", workdir=".", runner=None, generated_images_dir=None):
+    def __init__(
+        self,
+        command_name,
+        model_name="",
+        workdir=".",
+        runner=None,
+        generated_images_dir=None,
+        timeout_seconds=180,
+    ):
         self.command_name = command_name
         self.model_name = model_name
         self.workdir = Path(workdir)
         self.runner = runner or subprocess.run
+        self.timeout_seconds = timeout_seconds
         self._last_materialized_source = ""
         if generated_images_dir:
             self.generated_images_dir = Path(generated_images_dir)
@@ -44,15 +54,40 @@ class CodexCliClient:
                 full_prompt,
             ]
         )
-        result = self.runner(
-            command,
-            cwd=str(self.workdir),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        try:
+            result = self.runner(
+                command,
+                cwd=str(self.workdir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=self.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            generated_path = self._materialize_generated_image(
+                target_path=target_path,
+                known_generated_files=known_generated_files,
+                started_at=started_at,
+            )
+            if generated_path:
+                metadata = {
+                    "command_name": self.command_name,
+                    "resolved_command": resolved_command,
+                    "model_name": self.model_name,
+                    "stdout": exc.stdout or "",
+                    "stderr": exc.stderr or "",
+                    "prompt": full_prompt,
+                    "target_path": str(target_path),
+                    "last_message_path": str(last_message_path),
+                    "timed_out": True,
+                    "source_generated_image": self._last_materialized_source,
+                }
+                return generated_path, metadata
+            raise RuntimeError(
+                "codex cli image generation timed out after {0} seconds".format(self.timeout_seconds)
+            ) from exc
         if result.returncode != 0:
             raise RuntimeError("codex cli image generation failed: " + (result.stderr or result.stdout).strip())
         saved_path_text = ""
@@ -166,8 +201,49 @@ class CodexCliImageProvider(BaseImageProvider):
         lines.append("Generate a PNG image for storyboard shot {0}.".format(shot_index))
         if style_preset:
             lines.append("Style preset: {0}.".format(style_preset))
-        lines.append("Primary prompt: {0}.".format(positive_prompt.rstrip(".")))
+        lines.append("Primary prompt: {0}.".format(self._normalize_prompt(positive_prompt).rstrip(".")))
         if negative_prompt:
             lines.append("Avoid: {0}.".format(negative_prompt.rstrip(".")))
         lines.append("Preferred seed reference: {0}.".format(seed))
         return " ".join(lines)
+
+    def _normalize_prompt(self, positive_prompt):
+        source_text = (positive_prompt or "").strip()
+        if not source_text:
+            return "Create a clean storyboard frame"
+        extracted = self._extract_structured_fields(source_text)
+        if not extracted:
+            return source_text
+        segments = []
+        for key in ("scene", "subject", "action", "camera", "lighting", "emotion"):
+            value = extracted.get(key)
+            if value:
+                segments.append(value.rstrip("."))
+        prompt = ". ".join(segments).strip()
+        if prompt:
+            return prompt + "."
+        return source_text
+
+    def _extract_structured_fields(self, text):
+        mapping = {
+            "scene": "scene",
+            "subject": "subject",
+            "action": "action",
+            "camera": "camera",
+            "lighting": "lighting",
+            "emotion": "emotion",
+        }
+        extracted = {}
+        for line in text.splitlines():
+            normalized = line.strip()
+            if not normalized or ":" not in normalized:
+                continue
+            key, value = normalized.split(":", 1)
+            field_name = mapping.get(key.strip().lower())
+            if not field_name:
+                continue
+            cleaned = value.strip().strip('"').strip()
+            cleaned = re.sub(r"\s+", " ", cleaned)
+            if cleaned:
+                extracted[field_name] = cleaned
+        return extracted

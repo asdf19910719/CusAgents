@@ -56,6 +56,24 @@ def test_quality_service_rejects_mismatched_asset_count():
     assert "asset count" in result.notes
 
 
+def test_quality_service_rejects_failed_asset_status():
+    service = QualityService()
+    prompts = [
+        PromptItem(
+            shot_index=1,
+            positive_prompt="hero in rain",
+            negative_prompt="blurry",
+            style_tags=["cinematic"],
+        )
+    ]
+    assets = [{"shot_index": 1, "status": "failed"}]
+
+    result = service.validate_generation(build_storyboard(), prompts, assets)
+
+    assert result.result == "failed"
+    assert "asset generation failed" in result.notes
+
+
 def test_quality_service_allows_approval_and_rejection_transitions():
     service = QualityService()
 

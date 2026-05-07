@@ -6,4 +6,6 @@ def create_llm_provider(settings):
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
         default_model=settings.llm_default_model,
+        timeout_seconds=settings.llm_timeout_seconds,
+        retry_attempts=settings.llm_retry_attempts,
     )

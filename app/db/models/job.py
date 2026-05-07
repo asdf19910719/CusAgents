@@ -15,6 +15,7 @@ class Job(Base):
     style_preset: Mapped[str] = mapped_column(String(100), nullable=False)
     target_shot_count: Mapped[int] = mapped_column(nullable=False)
     image_backend: Mapped[str] = mapped_column(String(64), nullable=False, default="comfyui_remote")
+    notification_target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     current_step: Mapped[str] = mapped_column(String(64), nullable=False)

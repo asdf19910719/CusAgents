@@ -26,6 +26,7 @@ def build_image_providers(settings):
             client=CodexCliClient(
                 command_name=settings.codex_cli_command,
                 model_name=settings.codex_cli_model,
+                timeout_seconds=settings.codex_cli_timeout_seconds,
             ),
             backend_name="codex_cli",
         ),
@@ -37,6 +38,8 @@ def build_image_providers(settings):
                 api_key=settings.third_party_image_api_key,
                 model_name=settings.third_party_image_model,
                 api_path=settings.third_party_image_api_path,
+                timeout_seconds=settings.third_party_image_timeout_seconds,
+                retry_attempts=settings.third_party_image_retry_attempts,
             ),
             backend_name="third_party",
         )
@@ -47,6 +50,8 @@ def build_image_providers(settings):
                 api_key="placeholder",
                 model_name="placeholder-model",
                 api_path=settings.third_party_image_api_path,
+                timeout_seconds=settings.third_party_image_timeout_seconds,
+                retry_attempts=settings.third_party_image_retry_attempts,
             ),
             backend_name="third_party",
         )

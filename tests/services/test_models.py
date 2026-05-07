@@ -25,6 +25,7 @@ def test_core_models_can_be_created_and_related():
             style_preset="cinematic",
             target_shot_count=8,
             image_backend="comfyui_remote",
+            notification_target_id="chat-123",
             status="pending",
             idempotency_key="idem-1",
             current_step="outline",
@@ -108,6 +109,7 @@ def test_core_models_can_be_created_and_related():
 
         assert job.id is not None
         assert job.image_backend == "comfyui_remote"
+        assert job.notification_target_id == "chat-123"
         assert len(job.step_runs) == 1
         assert job.step_runs[0].cost == Decimal("0.0130")
         assert len(job.assets) == 1
