@@ -143,3 +143,36 @@ def test_image_generation_service_can_switch_to_third_party_backend(tmp_path):
         assert len(assets) == 1
         assert assets[0].workflow_json["provider_name"] == "third_party"
         assert "third_party-1.png" in assets[0].file_path
+
+
+def test_image_generation_service_can_switch_to_codex_cli_backend(tmp_path):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    service = ImageGenerationService(
+        providers={
+            "comfyui_remote": FakeImageProvider("comfyui_remote"),
+            "third_party": FakeImageProvider("third_party"),
+            "codex_cli": FakeImageProvider("codex_cli"),
+        },
+        default_backend="comfyui_remote",
+        output_dir=str(tmp_path),
+    )
+    prompts = [
+        PromptItem(
+            shot_index=1,
+            positive_prompt="hero in rain",
+            negative_prompt="blurry",
+            style_tags=["cinematic"],
+        )
+    ]
+
+    with Session(engine) as session:
+        job = create_job(session)
+        job.image_backend = "codex_cli"
+        session.commit()
+
+        assets = service.generate_assets(session, job, prompts, "cinematic")
+
+        assert len(assets) == 1
+        assert assets[0].workflow_json["provider_name"] == "codex_cli"
+        assert "codex_cli-1.png" in assets[0].file_path

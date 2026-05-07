@@ -7,4 +7,4 @@ class JobCreateRequest(StrictSchema):
     topic: str
     style_preset: str
     target_shot_count: int
-    image_backend: Literal["comfyui_remote", "third_party"] = "comfyui_remote"
+    image_backend: Literal["comfyui_remote", "third_party", "codex_cli"] = "comfyui_remote"

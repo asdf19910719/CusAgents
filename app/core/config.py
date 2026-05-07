@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     feishu_webhook_max_age_seconds: int = Field(default=300, alias="FEISHU_WEBHOOK_MAX_AGE_SECONDS")
     mobile_access_token: str = Field(default="", alias="MOBILE_ACCESS_TOKEN")
     mobile_session_max_age_seconds: int = Field(default=28800, alias="MOBILE_SESSION_MAX_AGE_SECONDS")
+    codex_cli_command: str = Field(default="codex", alias="CODEX_CLI_COMMAND")
+    codex_cli_model: str = Field(default="", alias="CODEX_CLI_MODEL")
     auto_enqueue_jobs: bool = Field(default=False, alias="AUTO_ENQUEUE_JOBS")
     queue_name: str = Field(default="custom-agents", alias="QUEUE_NAME")
 

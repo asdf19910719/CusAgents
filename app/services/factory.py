@@ -1,5 +1,6 @@
 from app.providers.image.comfyui_provider import ComfyUIImageProvider
 from app.providers.image.comfyui_client import ComfyUIClient
+from app.providers.image.codex_cli_provider import CodexCliClient, CodexCliImageProvider
 from app.providers.image.third_party_client import ThirdPartyImageClient
 from app.providers.image.third_party_provider import ThirdPartyImageProvider
 from app.providers.image.workflow_builder import WorkflowBuilder
@@ -20,7 +21,14 @@ def build_image_providers(settings):
             client=ComfyUIClient(base_url=settings.comfyui_base_url),
             workflow_builder=WorkflowBuilder(),
             backend_name="comfyui_remote",
-        )
+        ),
+        "codex_cli": CodexCliImageProvider(
+            client=CodexCliClient(
+                command_name=settings.codex_cli_command,
+                model_name=settings.codex_cli_model,
+            ),
+            backend_name="codex_cli",
+        ),
     }
     if settings.third_party_image_base_url:
         providers["third_party"] = ThirdPartyImageProvider(

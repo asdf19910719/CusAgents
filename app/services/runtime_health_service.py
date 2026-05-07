@@ -1,4 +1,5 @@
 import socket
+from shutil import which
 from urllib.parse import urlparse
 
 from redis import Redis
@@ -67,6 +68,12 @@ class RuntimeHealthService:
             items["third_party"]["model"] = self.settings.third_party_image_model
         else:
             items["third_party"] = {"status": "disabled"}
+        codex_command = self.settings.codex_cli_command
+        codex_path = which(codex_command)
+        if codex_path:
+            items["codex_cli"] = {"status": "configured", "command": codex_command, "path": codex_path}
+        else:
+            items["codex_cli"] = {"status": "disabled", "command": codex_command}
         return {
             "default_backend": self.settings.image_backend,
             "items": items,
