@@ -1,6 +1,9 @@
-from fastapi.testclient import TestClient
+from pathlib import Path
 
+from fastapi.testclient import TestClient
 from app.api.routes.jobs import get_job_dispatcher, get_notification_service
+from app.db.models.asset import Asset
+from app.db.session import SessionLocal
 from app.main import app
 
 
@@ -38,6 +41,30 @@ def test_mobile_can_create_job_and_redirect_to_detail():
                 "style_preset": "cinematic",
                 "target_shot_count": "2",
                 "image_backend": "third_party",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_dispatcher, None)
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/mobile/jobs/")
+
+
+def test_mobile_can_create_codex_cli_job_and_redirect_to_detail():
+    app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/mobile/jobs",
+            data={
+                "topic": "璧涘崥姝︿緺",
+                "style_preset": "cinematic",
+                "target_shot_count": "2",
+                "image_backend": "codex_cli",
             },
             follow_redirects=False,
         )
@@ -143,3 +170,65 @@ def test_mobile_login_rejects_invalid_token(monkeypatch):
     response = client.post("/mobile/login", data={"access_token": "bad-token"})
 
     assert response.status_code == 403
+
+
+def test_mobile_logout_clears_session(monkeypatch):
+    monkeypatch.setenv("MOBILE_ACCESS_TOKEN", "secret-token")
+    client = TestClient(app)
+
+    client.post("/mobile/login", data={"access_token": "secret-token"}, follow_redirects=False)
+    logout_response = client.post("/mobile/logout", follow_redirects=False)
+    jobs_response = client.get("/mobile/jobs", follow_redirects=False)
+
+    assert logout_response.status_code == 303
+    assert logout_response.headers["location"] == "/mobile/login"
+    assert jobs_response.status_code == 303
+    assert jobs_response.headers["location"] == "/mobile/login"
+
+
+def test_mobile_job_detail_shows_asset_preview_link_and_preview_route_serves_image(tmp_path):
+    app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+
+    try:
+        create_response = client.post(
+            "/jobs",
+            json={
+                "topic": "鍐疯鍓戝澶嶄粐",
+                "style_preset": "cinematic",
+                "target_shot_count": 1,
+                "image_backend": "third_party",
+            },
+        )
+        job_id = create_response.json()["id"]
+        image_path = tmp_path / "preview.png"
+        image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+        with SessionLocal() as session:
+            session.add(
+                Asset(
+                    job_id=job_id,
+                    shot_index=1,
+                    prompt_text="hero in rain",
+                    negative_prompt="blurry",
+                    seed=1001,
+                    workflow_json={"provider_name": "third_party"},
+                    file_path=str(image_path),
+                    preview_path=str(image_path),
+                    status="completed",
+                )
+            )
+            session.commit()
+            asset_id = session.query(Asset).order_by(Asset.id.desc()).first().id
+
+        detail_response = client.get("/mobile/jobs/{0}".format(job_id))
+        preview_response = client.get("/mobile/assets/{0}/preview".format(asset_id))
+    finally:
+        app.dependency_overrides.pop(get_job_dispatcher, None)
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert detail_response.status_code == 200
+    assert "/mobile/assets/{0}/preview".format(asset_id) in detail_response.text
+    assert preview_response.status_code == 200
+    assert preview_response.headers["content-type"].startswith("image/png")

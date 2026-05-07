@@ -11,10 +11,11 @@ from app.api.routes.jobs import get_job_dispatcher, get_notification_service
 from app.commands.parser import parse_command_text
 from app.commands.router import CommandRouter
 from app.core.config import load_settings
+from app.services.replay_guard_service import InMemoryReplayStore, RedisReplayStore
 
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-_SEEN_FEISHU_REQUESTS = {}
+_FALLBACK_REPLAY_STORE = InMemoryReplayStore()
 
 
 def get_command_router(
@@ -128,16 +129,14 @@ def _verify_feishu_signature(raw_body, headers, settings):
         raise HTTPException(status_code=403, detail="invalid feishu signature")
 
     replay_key = "{0}:{1}:{2}".format(timestamp, nonce, signature)
-    _cleanup_seen_requests(now, settings.feishu_webhook_max_age_seconds)
-    if replay_key in _SEEN_FEISHU_REQUESTS:
+    if not _mark_feishu_request_seen(settings, replay_key):
         raise HTTPException(status_code=403, detail="replayed feishu request")
-    _SEEN_FEISHU_REQUESTS[replay_key] = now
 
 
-def _cleanup_seen_requests(now, ttl_seconds):
-    expired_keys = []
-    for replay_key, seen_at in _SEEN_FEISHU_REQUESTS.items():
-        if now - seen_at > ttl_seconds:
-            expired_keys.append(replay_key)
-    for replay_key in expired_keys:
-        _SEEN_FEISHU_REQUESTS.pop(replay_key, None)
+def _mark_feishu_request_seen(settings, replay_key):
+    ttl_seconds = settings.feishu_webhook_max_age_seconds
+    try:
+        store = RedisReplayStore(settings.redis_url)
+        return store.mark_seen(replay_key, ttl_seconds)
+    except Exception:
+        return _FALLBACK_REPLAY_STORE.mark_seen(replay_key, ttl_seconds)

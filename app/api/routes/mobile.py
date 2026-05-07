@@ -3,10 +3,11 @@ import hmac
 import html
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -126,6 +127,24 @@ def _page(title: str, body: str) -> HTMLResponse:
       padding-left: 18px;
       margin-bottom: 0;
     }}
+    img.preview {{
+      width: 100%;
+      margin-top: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      display: block;
+      background: #fff;
+    }}
+    .topbar {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }}
+    .topbar form {{
+      margin: 0;
+      width: 132px;
+    }}
   </style>
 </head>
 <body>
@@ -145,7 +164,7 @@ def _job_summary(job: Job) -> str:
   <strong>{1}</strong>
   <span class="pill">{2}</span>
   <span class="pill">{3}</span>
-  <div class="meta">#{0} · {4} · backend={5}</div>
+  <div class="meta">#{0} · style={4} · backend={5}</div>
 </a>""".format(
         job.id,
         html.escape(job.topic),
@@ -194,6 +213,33 @@ def _mobile_auth_redirect(request: Request):
     return RedirectResponse(url="/mobile/login", status_code=303)
 
 
+def _logout_form() -> str:
+    settings = _mobile_settings()
+    if not (settings.mobile_access_token or "").strip():
+        return ""
+    return """
+<form method="post" action="/mobile/logout">
+  <button type="submit" class="secondary">退出登录</button>
+</form>"""
+
+
+def _render_asset_preview(asset: Asset) -> str:
+    preview_url = "/mobile/assets/{0}/preview".format(asset.id)
+    file_name = html.escape(Path(asset.file_path).name)
+    return """
+<li>
+  <strong>镜头 {0}</strong> · {1}<br>
+  <a href="{2}" target="_blank">预览图片</a><br>
+  <span class="meta">{3}</span>
+  <img class="preview" src="{2}" alt="asset-{0}">
+</li>""".format(
+        asset.shot_index,
+        html.escape(asset.status),
+        preview_url,
+        file_name,
+    )
+
+
 @router.get("", response_class=HTMLResponse)
 @router.get("/jobs", response_class=HTMLResponse)
 def mobile_jobs_page(request: Request, db: Session = Depends(get_db)):
@@ -209,8 +255,13 @@ def mobile_jobs_page(request: Request, db: Session = Depends(get_db)):
 
     body = """
 <section class="card">
-  <h1>移动控制台</h1>
-  <p class="meta">用于手机端快速创建任务、查看状态和触发审核动作。</p>
+  <div class="topbar">
+    <div>
+      <h1>移动控制台</h1>
+      <p class="meta">用于手机端快速创建任务、查看状态和触发审核动作。</p>
+    </div>
+    {1}
+  </div>
 </section>
 <section class="card">
   <h2>创建任务</h2>
@@ -233,6 +284,7 @@ def mobile_jobs_page(request: Request, db: Session = Depends(get_db)):
         <select id="image_backend" name="image_backend">
           <option value="third_party">third_party</option>
           <option value="comfyui_remote">comfyui_remote</option>
+          <option value="codex_cli">codex_cli</option>
         </select>
       </div>
     </div>
@@ -242,7 +294,7 @@ def mobile_jobs_page(request: Request, db: Session = Depends(get_db)):
 <section>
   <h2>最近任务</h2>
   {0}
-</section>""".format(jobs_html)
+</section>""".format(jobs_html, _logout_form())
     return _page("移动控制台", body)
 
 
@@ -292,6 +344,13 @@ async def mobile_login(request: Request):
     return response
 
 
+@router.post("/logout")
+async def mobile_logout():
+    response = RedirectResponse(url="/mobile/login", status_code=303)
+    response.delete_cookie(MOBILE_SESSION_COOKIE)
+    return response
+
+
 @router.post("/jobs")
 async def create_mobile_job(
     request: Request,
@@ -314,7 +373,7 @@ async def create_mobile_job(
         target_shot_count = int(target_shot_count_raw)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="target_shot_count must be an integer") from exc
-    if image_backend not in ("comfyui_remote", "third_party"):
+    if image_backend not in ("comfyui_remote", "third_party", "codex_cli"):
         raise HTTPException(status_code=422, detail="invalid image backend")
     if target_shot_count < 1:
         raise HTTPException(status_code=422, detail="target_shot_count must be positive")
@@ -354,14 +413,7 @@ def mobile_job_detail(job_id: int, request: Request, db: Session = Depends(get_d
 
     assets = db.execute(select(Asset).where(Asset.job_id == job_id).order_by(Asset.shot_index)).scalars().all()
     if assets:
-        assets_html = "".join(
-            "<li>镜头 {0} · {1} · {2}</li>".format(
-                asset.shot_index,
-                html.escape(asset.status),
-                html.escape(asset.file_path),
-            )
-            for asset in assets
-        )
+        assets_html = "".join(_render_asset_preview(asset) for asset in assets)
         assets_section = "<ul>{0}</ul>".format(assets_html)
     else:
         assets_section = '<p class="meta">当前还没有生成素材。</p>'
@@ -372,10 +424,15 @@ def mobile_job_detail(job_id: int, request: Request, db: Session = Depends(get_d
 
     body = """
 <section class="card">
-  <h1>{0}</h1>
-  <div class="pill">{1}</div>
-  <div class="pill">{2}</div>
-  <div class="meta">job_id={3} · style={4} · 镜头={5} · backend={6}</div>
+  <div class="topbar">
+    <div>
+      <h1>{0}</h1>
+      <div class="pill">{1}</div>
+      <div class="pill">{2}</div>
+      <div class="meta">job_id={3} · style={4} · 镜头={5} · backend={6}</div>
+    </div>
+    {9}
+  </div>
 </section>
 <section class="card">
   <h2>任务动作</h2>
@@ -411,6 +468,7 @@ def mobile_job_detail(job_id: int, request: Request, db: Session = Depends(get_d
         html.escape(job.image_backend),
         assets_section,
         error_html,
+        _logout_form(),
     )
     return _page("任务详情", body)
 
@@ -455,3 +513,25 @@ async def mobile_job_action(
     else:
         raise HTTPException(status_code=400, detail="unsupported action")
     return RedirectResponse(url="/mobile/jobs/{0}".format(job.id), status_code=303)
+
+
+@router.get("/assets/{asset_id}/preview")
+def mobile_asset_preview(asset_id: int, request: Request, db: Session = Depends(get_db)):
+    redirect = _mobile_auth_redirect(request)
+    if redirect is not None:
+        return redirect
+
+    asset = db.get(Asset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="asset not found")
+    preview_path = Path(asset.preview_path or asset.file_path)
+    if not preview_path.exists():
+        raise HTTPException(status_code=404, detail="asset preview file not found")
+    media_type = None
+    if preview_path.suffix.lower() == ".png":
+        media_type = "image/png"
+    elif preview_path.suffix.lower() in (".jpg", ".jpeg"):
+        media_type = "image/jpeg"
+    elif preview_path.suffix.lower() == ".webp":
+        media_type = "image/webp"
+    return FileResponse(str(preview_path), media_type=media_type)

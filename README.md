@@ -49,11 +49,16 @@
 14. `FEISHU_NOTIFY_WEBHOOK_URL`
 15. `FEISHU_VERIFICATION_TOKEN`
 16. `FEISHU_ENCRYPT_KEY`
-17. `FEISHU_WEBHOOK_MAX_AGE_SECONDS`
-18. `MOBILE_ACCESS_TOKEN`
-19. `MOBILE_SESSION_MAX_AGE_SECONDS`
-20. `AUTO_ENQUEUE_JOBS`
-21. `QUEUE_NAME`
+17. `FEISHU_APP_ID`
+18. `FEISHU_APP_SECRET`
+19. `FEISHU_OPEN_BASE_URL`
+20. `FEISHU_WEBHOOK_MAX_AGE_SECONDS`
+21. `MOBILE_ACCESS_TOKEN`
+22. `MOBILE_SESSION_MAX_AGE_SECONDS`
+23. `CODEX_CLI_COMMAND`
+24. `CODEX_CLI_MODEL`
+25. `AUTO_ENQUEUE_JOBS`
+26. `QUEUE_NAME`
 
 说明：
 
@@ -62,10 +67,13 @@
 3. 当前支持值：
    `comfyui_remote`
    `third_party`
+   `codex_cli`
 4. `FEISHU_NOTIFY_WEBHOOK_URL` 配置后，系统会在任务创建、等待审核、失败等事件写通知日志，并尝试推送飞书 webhook
 5. `FEISHU_VERIFICATION_TOKEN` 用于飞书事件入口的最小 token 校验
-6. `FEISHU_ENCRYPT_KEY` 用于飞书事件入口签名校验；配置后会同时启用时间窗校验和进程内重放保护
-7. `MOBILE_ACCESS_TOKEN` 配置后，手机轻控制页会要求先登录，再通过短期 session cookie 访问
+6. `FEISHU_ENCRYPT_KEY` 用于飞书事件入口签名校验；配置后会同时启用时间窗校验和 Redis 优先、内存兜底的重放保护
+7. `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 与 `FEISHU_OPEN_BASE_URL` 用于飞书应用消息回发与长连接客户端
+8. `MOBILE_ACCESS_TOKEN` 配置后，手机轻控制页会要求先登录，再通过短期 session cookie 访问
+9. `CODEX_CLI_COMMAND` 与 `CODEX_CLI_MODEL` 用于实验型 `codex_cli` 出图后端
 
 ## 本地安装
 
@@ -223,6 +231,8 @@ GET  /mobile/jobs
 POST /mobile/jobs
 GET  /mobile/jobs/{job_id}
 POST /mobile/jobs/{job_id}/action
+POST /mobile/logout
+GET  /mobile/assets/{asset_id}/preview
 ```
 
 说明：
@@ -231,8 +241,10 @@ POST /mobile/jobs/{job_id}/action
 2. `POST /mobile/jobs` 使用表单方式创建任务，并重定向到详情页
 3. `GET /mobile/jobs/{job_id}` 展示任务状态、后端、素材概览和可执行动作
 4. `POST /mobile/jobs/{job_id}/action` 当前支持 `approve`、`retry`、`cancel`
-5. 配置 `MOBILE_ACCESS_TOKEN` 后，访问 `/mobile/*` 会先跳到 `/mobile/login`，登录成功后写入短期 session cookie
-6. 这一层刻意保持无模板引擎、无前端构建依赖，便于直接部署在现有 API 服务中
+5. `POST /mobile/logout` 用于清除移动端短期 session
+6. `GET /mobile/assets/{asset_id}/preview` 用于直接预览已生成素材
+7. 配置 `MOBILE_ACCESS_TOKEN` 后，访问 `/mobile/*` 会先跳到 `/mobile/login`，登录成功后写入短期 session cookie
+8. 这一层刻意保持无模板引擎、无前端构建依赖，便于直接部署在现有 API 服务中
 
 ## 多后端出图建议
 
@@ -242,6 +254,8 @@ POST /mobile/jobs/{job_id}/action
    适合你自己的台式机 GPU
 2. 把 `third_party` 作为备用后端
    适合台式机不可用或需要快速补图
+3. 把 `codex_cli` 作为实验后端
+   适合你本人在已登录 ChatGPT/Codex 环境下做本机试验，不建议作为主生产后端
 
 这意味着：
 
@@ -270,23 +284,24 @@ pytest -v
 9. ComfyUI 客户端与图像服务
 10. 第三方图像 Provider
 11. 多后端工厂装配
-12. 质量检查
-13. 编排服务
-14. 成本统计
-15. API 行为
-16. Worker 执行入口
-17. 全链路 Mock e2e
-18. 真实 RQ 入队烟测相关路径
-19. 运行期健康诊断
-20. 非法 `image_backend` 请求校验
-21. 飞书通知记录与状态变化通知
-22. 飞书命令解析与 webhook 入口
-23. 命令 token 校验与命令层审计
-24. 飞书应用消息回发与 `command_result` 通知
-25. 手机轻控制页与任务动作表单链路
-26. 飞书签名校验、时间窗校验与重放保护
-27. 手机轻控制页登录与短期 session
-28. 飞书长连接命令入口与 SDK 客户端装配
+12. `codex_cli` 实验型图片后端
+13. 质量检查
+14. 编排服务
+15. 成本统计
+16. API 行为
+17. Worker 执行入口
+18. 全链路 Mock e2e
+19. 真实 RQ 入队烟测相关路径
+20. 运行期健康诊断
+21. 非法 `image_backend` 请求校验
+22. 飞书通知记录与状态变化通知
+23. 飞书命令解析与 webhook 入口
+24. 命令 token 校验与命令层审计
+25. 飞书应用消息回发与 `command_result` 通知
+26. 手机轻控制页与任务动作表单链路
+27. 飞书签名校验、时间窗校验与重放保护
+28. 手机轻控制页登录与短期 session
+29. 飞书长连接命令入口与 SDK 客户端装配
 
 ## 当前已知限制
 
@@ -298,6 +313,7 @@ pytest -v
 6. 当前飞书命令入口已可执行并返回 JSON；只有配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET` 后，才会真实尝试飞书对话回发。
 7. 当前飞书重放保护是进程内缓存版，重启后不会保留历史 nonce；如果以后做多实例部署，需要换成 Redis 级别去重。
 8. 飞书长连接当前只接了 `p2_im_message_receive_v1` 文本消息事件，还没有扩到卡片交互或更复杂事件类型。
+9. `codex_cli` 后端依赖本机已安装并登录的 Codex CLI，适合实验和人工参与场景，不建议直接当主生产出图链路。
 
 ## 下一步建议
 
@@ -309,3 +325,4 @@ pytest -v
 6. 把飞书重放保护提升为 Redis 级别，适配多进程或多实例部署
 7. 视需要补 Feishu 命令 DSL、异步结果卡片和更细的通知策略
 8. 视飞书侧配置决定是否保留 webhook 与长连接双入口并存
+9. 如果继续保留 `codex_cli`，建议后续再补配额、耗时和失败分类统计
