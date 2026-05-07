@@ -1,7 +1,9 @@
 import json
+import asyncio
 
 from lark_oapi import EventDispatcherHandler, LogLevel
 from lark_oapi.ws import Client as LarkWsClient
+import lark_oapi.ws.client as lark_ws_client_module
 
 from app.commands.parser import parse_command_text
 from app.commands.router import CommandRouter
@@ -100,6 +102,32 @@ class FeishuLongConnectionRunner:
         logger.info("starting feishu long connection client")
         client = self.build_client()
         client.start()
+
+    def connect_check(self):
+        logger.info("running feishu long connection connect check")
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            client = self.build_client()
+            loop.run_until_complete(self._connect_once(client))
+            self._cancel_pending_tasks(loop)
+            sdk_loop = getattr(lark_ws_client_module, "loop", None)
+            if sdk_loop is not None and sdk_loop is not loop and not sdk_loop.is_closed():
+                self._cancel_pending_tasks(sdk_loop)
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
+
+    async def _connect_once(self, client):
+        await client._connect()
+        await client._disconnect()
+
+    def _cancel_pending_tasks(self, loop):
+        pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
 
 
 def build_feishu_long_connection_handler(settings, session_factory):

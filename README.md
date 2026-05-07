@@ -99,7 +99,7 @@ curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/admin/runtime/health
 ```
 
-这个接口会返回数据库、Redis、LLM 配置、`comfyui_remote`、`third_party` 的当前状态，适合联调前快速判断是配置缺失、服务不可达，还是队列未开启。
+这个接口会返回数据库、Redis、LLM 配置、`comfyui_remote`、`third_party`、`codex_cli` 的当前状态，适合联调前快速判断是配置缺失、服务不可达，还是队列未开启。
 
 ## 启动 Worker
 
@@ -107,7 +107,10 @@ curl http://127.0.0.1:8000/admin/runtime/health
 
 ```bash
 python scripts/run_worker.py
+python scripts/run_worker.py --check
 ```
+
+`--check` 只验证脚本入口与依赖导入，不启动真实队列消费。
 
 ## 启动飞书长连接客户端
 
@@ -115,6 +118,8 @@ python scripts/run_worker.py
 
 ```bash
 python scripts/run_feishu_long_connection.py
+python scripts/run_feishu_long_connection.py --check
+python scripts/run_feishu_long_connection.py --connect-check
 ```
 
 说明：
@@ -123,6 +128,8 @@ python scripts/run_feishu_long_connection.py
 2. 需要已配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`
 3. 适合“飞书发命令 -> 本地执行 -> 飞书收结果”的单机控制场景
 4. 如果飞书后台切换到长连接模式，就不再依赖公网回调 URL
+5. `--check` 只验证配置和客户端构造
+6. `--connect-check` 会真实建立并断开一次飞书长连接，用于联调确认建联能力
 
 如果要让 `POST /jobs` 创建任务后自动入队，需要启用：
 
@@ -154,6 +161,7 @@ curl -X POST http://127.0.0.1:8000/jobs ^
 ```bash
 python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend comfyui_remote
 python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend third_party
+python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend codex_cli
 ```
 
 当前 `POST /jobs` 返回中会包含：
@@ -166,6 +174,7 @@ python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend 
 
 1. `comfyui_remote`
 2. `third_party`
+3. `codex_cli`
 
 如果传入其它值，API 会直接返回 `422`，避免任务入库后才在 Worker 阶段失败。
 
@@ -219,7 +228,7 @@ POST /webhooks/feishu/events
 3. 配置 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 后，系统会尝试通过飞书应用消息接口把命令执行结果回发到原 `chat_id`
 4. 若未配置飞书应用凭据，则 `command_result` 会被记录为通知日志，但不会真实发回飞书
 5. 配置 `FEISHU_ENCRYPT_KEY` 后，会额外校验 `x-lark-request-timestamp`、`x-lark-request-nonce`、`x-lark-signature`
-6. 签名校验包含时间窗限制和进程内重放保护；`url_verification` challenge 仍允许直接通过
+6. 签名校验包含时间窗限制和 Redis 优先、内存兜底的重放保护；`url_verification` challenge 仍允许直接通过
 7. 长连接模式通过 `lark-oapi` 官方 SDK 接收 `p2_im_message_receive_v1` 事件，再转入当前 `CommandRouter`
 
 ## 手机轻控制页
@@ -311,7 +320,7 @@ pytest -v
 4. 当前还没有按后端区分更细的成本模型。
 5. 手机轻控制页当前只适合单用户场景，尚未接入多用户隔离、权限分级和注销管理。
 6. 当前飞书命令入口已可执行并返回 JSON；只有配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET` 后，才会真实尝试飞书对话回发。
-7. 当前飞书重放保护是进程内缓存版，重启后不会保留历史 nonce；如果以后做多实例部署，需要换成 Redis 级别去重。
+7. 当前飞书重放保护已升级为 Redis 优先、内存兜底；如果以后做多实例部署，仍建议继续复用同一 Redis 并补监控与过期策略可观测性。
 8. 飞书长连接当前只接了 `p2_im_message_receive_v1` 文本消息事件，还没有扩到卡片交互或更复杂事件类型。
 9. `codex_cli` 后端依赖本机已安装并登录的 Codex CLI，适合实验和人工参与场景，不建议直接当主生产出图链路。
 

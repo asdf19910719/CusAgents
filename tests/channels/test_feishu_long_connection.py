@@ -161,3 +161,109 @@ def test_long_connection_client_builder_uses_sdk_client_and_registers_handler():
     assert captured["verification_token"] == "token_test"
     assert captured["encrypt_key"] == "encrypt_test"
     assert captured["callback"] == handler.handle_message_receive_v1
+
+
+def test_long_connection_runner_can_connect_check_without_blocking():
+    from app.channels.feishu_long_connection import FeishuLongConnectionHandler, FeishuLongConnectionRunner
+
+    captured = {"connect_called": 0, "disconnect_called": 0}
+
+    class FakeEventDispatcherBuilder:
+        def register_p2_im_message_receive_v1(self, callback):
+            return self
+
+        def build(self):
+            return "fake-event-handler"
+
+    class FakeEventDispatcherRoot:
+        @staticmethod
+        def builder(verification_token, encrypt_key):
+            return FakeEventDispatcherBuilder()
+
+    class FakeWsClient:
+        def __init__(self, app_id, app_secret, event_handler=None, **kwargs):
+            self.app_id = app_id
+            self.app_secret = app_secret
+            self.event_handler = event_handler
+
+        async def _connect(self):
+            captured["connect_called"] += 1
+
+        async def _disconnect(self):
+            captured["disconnect_called"] += 1
+
+    handler = FeishuLongConnectionHandler(
+        session_factory=lambda: None,
+        command_router_factory=lambda: None,
+    )
+    settings = Settings(
+        _env_file=None,
+        LLM_API_KEY="test-key",
+        FEISHU_APP_ID="cli_test",
+        FEISHU_APP_SECRET="secret_test",
+    )
+    runner = FeishuLongConnectionRunner(
+        settings=settings,
+        handler=handler,
+        ws_client_cls=FakeWsClient,
+        event_dispatcher_cls=FakeEventDispatcherRoot,
+    )
+
+    runner.connect_check()
+
+    assert captured["connect_called"] == 1
+    assert captured["disconnect_called"] == 1
+
+
+def test_long_connection_runner_connect_check_cancels_pending_tasks():
+    import asyncio
+
+    from app.channels.feishu_long_connection import FeishuLongConnectionHandler, FeishuLongConnectionRunner
+
+    captured = {"background_task": None}
+
+    class FakeEventDispatcherBuilder:
+        def register_p2_im_message_receive_v1(self, callback):
+            return self
+
+        def build(self):
+            return "fake-event-handler"
+
+    class FakeEventDispatcherRoot:
+        @staticmethod
+        def builder(verification_token, encrypt_key):
+            return FakeEventDispatcherBuilder()
+
+    class FakeWsClient:
+        def __init__(self, app_id, app_secret, event_handler=None, **kwargs):
+            self.app_id = app_id
+            self.app_secret = app_secret
+            self.event_handler = event_handler
+
+        async def _connect(self):
+            captured["background_task"] = asyncio.get_running_loop().create_task(asyncio.sleep(60))
+
+        async def _disconnect(self):
+            return None
+
+    handler = FeishuLongConnectionHandler(
+        session_factory=lambda: None,
+        command_router_factory=lambda: None,
+    )
+    settings = Settings(
+        _env_file=None,
+        LLM_API_KEY="test-key",
+        FEISHU_APP_ID="cli_test",
+        FEISHU_APP_SECRET="secret_test",
+    )
+    runner = FeishuLongConnectionRunner(
+        settings=settings,
+        handler=handler,
+        ws_client_cls=FakeWsClient,
+        event_dispatcher_cls=FakeEventDispatcherRoot,
+    )
+
+    runner.connect_check()
+
+    assert captured["background_task"] is not None
+    assert captured["background_task"].cancelled() is True

@@ -13,7 +13,7 @@ def main():
     parser.add_argument(
         "--image-backend",
         default="comfyui_remote",
-        choices=["comfyui_remote", "third_party"],
+        choices=["comfyui_remote", "third_party", "codex_cli"],
         help="Image backend to use for this job",
     )
     parser.add_argument("--poll-interval", type=float, default=1.0, help="Polling interval in seconds")
