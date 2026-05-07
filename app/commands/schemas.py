@@ -22,5 +22,6 @@ class CommandResult(BaseModel):
     command_name: str
     message: str
     job_id: int | None = None
+    run_id: int | None = None
     status: str | None = None
     payload: dict = Field(default_factory=dict)

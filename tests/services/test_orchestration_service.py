@@ -72,6 +72,7 @@ class FakeQualityService:
 class FakeNotificationService:
     def __init__(self):
         self.calls = []
+        self.asset_calls = []
 
     def notify_job_event(self, session, job, event_type, message, target_id=None):
         self.calls.append(
@@ -79,6 +80,16 @@ class FakeNotificationService:
                 "job_id": job.id,
                 "event_type": event_type,
                 "message": message,
+                "target_id": target_id,
+            }
+        )
+
+    def notify_asset_image(self, session, job, asset, event_type="job_asset_image", target_id=None):
+        self.asset_calls.append(
+            {
+                "job_id": job.id,
+                "asset_status": getattr(asset, "status", None),
+                "event_type": event_type,
                 "target_id": target_id,
             }
         )
@@ -121,6 +132,7 @@ def test_orchestration_service_moves_job_to_waiting_review():
         assert result.status == JobStatus.WAITING_REVIEW
         assert result.current_step == "review"
         assert notification_service.calls[-1]["event_type"] == "job_waiting_review"
+        assert notification_service.asset_calls[-1]["event_type"] == "job_asset_image"
 
 
 def test_orchestration_service_marks_job_failed_when_image_step_raises():

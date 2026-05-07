@@ -27,6 +27,7 @@ def clear_settings_env(monkeypatch):
         "CODEX_CLI_COMMAND",
         "CODEX_CLI_MODEL",
         "CODEX_CLI_TIMEOUT_SECONDS",
+        "CODEX_RUN_TIMEOUT_SECONDS",
         )
     for key in keys:
         monkeypatch.delenv(key, raising=False)
@@ -63,6 +64,7 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.codex_cli_command == "codex"
     assert settings.codex_cli_model == ""
     assert settings.codex_cli_timeout_seconds == 180
+    assert settings.codex_run_timeout_seconds == 300
 
 
 def test_settings_require_llm_api_key(monkeypatch):

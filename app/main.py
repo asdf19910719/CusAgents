@@ -8,6 +8,7 @@ from app.api.routes.mobile import router as mobile_router
 from app.api.routes.webhooks import router as webhooks_router
 from app.core.logging import setup_logging
 from app.db.base import Base
+from app.db import models  # noqa: F401
 from app.db.session import engine
 
 

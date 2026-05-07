@@ -6,6 +6,7 @@ from app.providers.image.third_party_provider import ThirdPartyImageProvider
 from app.providers.image.workflow_builder import WorkflowBuilder
 from app.providers.llm.factory import create_llm_provider
 from app.services.cache_service import CacheService
+from app.services.codex_run_service import CodexRunService
 from app.services.image_service import ImageGenerationService
 from app.services.notification_service import FeishuAppMessageNotifier, FeishuWebhookNotifier, NotificationService
 from app.services.orchestration_service import OrchestrationService
@@ -92,4 +93,14 @@ def build_orchestration_service(settings):
         image_service=image_service,
         quality_service=quality_service,
         notification_service=notification_service,
+    )
+
+
+def build_codex_run_service(settings):
+    return CodexRunService(
+        command_name=settings.codex_cli_command,
+        model_name=settings.codex_cli_model,
+        workdir=".",
+        output_dir="./output/codex_runs",
+        timeout_seconds=settings.codex_run_timeout_seconds,
     )

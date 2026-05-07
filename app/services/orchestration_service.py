@@ -42,6 +42,7 @@ class OrchestrationService:
                 job.status = JobStatus.WAITING_REVIEW
                 job.current_step = "review"
                 self._notify(session, job, "job_waiting_review", "任务已生成完成，等待审核")
+                self._notify_first_asset(session, job, assets)
             else:
                 job.status = JobStatus.FAILED
                 job.error_message = quality_result.notes
@@ -59,3 +60,16 @@ class OrchestrationService:
     def _notify(self, session, job, event_type, message):
         if self.notification_service is not None:
             self.notification_service.notify_job_event(session, job, event_type=event_type, message=message)
+
+    def _notify_first_asset(self, session, job, assets):
+        if self.notification_service is None or not hasattr(self.notification_service, "notify_asset_image"):
+            return
+        for asset in assets:
+            if self._asset_status(asset) == "completed":
+                self.notification_service.notify_asset_image(session, job, asset, event_type="job_asset_image")
+                return
+
+    def _asset_status(self, asset):
+        if isinstance(asset, dict):
+            return asset.get("status")
+        return getattr(asset, "status", None)

@@ -335,3 +335,39 @@ pytest -v
 7. 视需要补 Feishu 命令 DSL、异步结果卡片和更细的通知策略
 8. 视飞书侧配置决定是否保留 webhook 与长连接双入口并存
 9. 如果继续保留 `codex_cli`，建议后续再补配额、耗时和失败分类统计
+
+## 最新补充：飞书图片回传与任意 Codex CLI 指令
+
+当前飞书控制层已经额外支持两条能力：
+
+1. 工作流图片回传
+   当任务完成并进入 `waiting_review` 后，系统会优先选择首个已生成素材，
+   通过飞书应用消息接口上传本地图片，再向原会话发送 `image` 消息。
+   这要求已经配置：
+   - `FEISHU_APP_ID`
+   - `FEISHU_APP_SECRET`
+   - 可选 `FEISHU_OPEN_BASE_URL`
+
+2. 任意 Codex CLI 任务
+   飞书里现在支持直接下发 `codex` 任务，不再局限于白名单工作流动作。
+   当前实现走的是 `codex exec` 的任意 prompt 执行链路，而不是任意 shell。
+   这能满足“飞书里让 Codex CLI 处理任意任务”和“飞书里触发既定工作流”并存。
+
+新增命令：
+
+```text
+/codex prompt="Inspect this repo and reply with exactly one line: OK"
+/codex_status run=12
+```
+
+说明：
+1. `/codex` 会创建一条 `CodexRun` 记录并异步入队
+2. Worker 会调用本机 `codex exec`
+3. 执行结果会回发到原飞书会话
+4. 如果本次 Codex 任务产生了图片，系统也会尝试把图片上传并回发到飞书
+5. `/codex_status` 可查询指定 `run_id` 的当前状态、结果摘要和输出文件路径
+
+当前推荐用法：
+1. 飞书工作流任务继续用 `/create ... backend=codex_cli|third_party|comfyui_remote`
+2. 任意 Codex 任务用 `/codex prompt="..."`
+3. 需要追踪时用 `/status job=...` 或 `/codex_status run=...`

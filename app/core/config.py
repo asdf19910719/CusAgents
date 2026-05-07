@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     codex_cli_command: str = Field(default="codex", alias="CODEX_CLI_COMMAND")
     codex_cli_model: str = Field(default="", alias="CODEX_CLI_MODEL")
     codex_cli_timeout_seconds: int = Field(default=180, alias="CODEX_CLI_TIMEOUT_SECONDS")
+    codex_run_timeout_seconds: int = Field(default=300, alias="CODEX_RUN_TIMEOUT_SECONDS")
     auto_enqueue_jobs: bool = Field(default=False, alias="AUTO_ENQUEUE_JOBS")
     queue_name: str = Field(default="custom-agents", alias="QUEUE_NAME")
 

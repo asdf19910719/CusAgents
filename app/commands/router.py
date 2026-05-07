@@ -4,6 +4,7 @@ from app.commands.schemas import CommandResult
 from app.core.config import load_settings
 from app.db.models.asset import Asset
 from app.db.models.command_log import CommandLog
+from app.db.models.codex_run import CodexRun
 from app.db.models.job import Job
 from app.db.models.review import Review
 from app.db.models.step_run import StepRun
@@ -40,6 +41,10 @@ class CommandRouter:
             return self._create_job(session, command)
         if name == "job_status":
             return self._job_status(session, command)
+        if name == "run_codex":
+            return self._run_codex(session, command)
+        if name == "codex_status":
+            return self._codex_status(session, command)
         if name == "retry_job":
             return self._retry_job(session, command)
         if name == "approve_job":
@@ -100,6 +105,49 @@ class CommandRouter:
                 "target_shot_count": job.target_shot_count,
                 "image_backend": job.image_backend,
                 "error_message": job.error_message,
+            },
+        )
+
+    def _run_codex(self, session, command):
+        run = CodexRun(
+            request_id=str(uuid.uuid4()),
+            channel_type=command.channel,
+            sender_id=command.sender_id,
+            notification_target_id=command.chat_id,
+            prompt_text=command.arguments["prompt"],
+            status="pending",
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        dispatch_result = self._safe_enqueue_codex_run(run.id)
+        return CommandResult(
+            success=True,
+            command_name=command.command_name,
+            message="codex 任务已创建",
+            run_id=run.id,
+            status=run.status,
+            payload={
+                "run_id": run.id,
+                "dispatch_status": dispatch_result["dispatch_status"],
+                "queue_name": dispatch_result["queue_name"],
+                "dispatch_error": dispatch_result["dispatch_error"],
+            },
+        )
+
+    def _codex_status(self, session, command):
+        run = self._require_codex_run(session, command.arguments["run_id"])
+        return CommandResult(
+            success=True,
+            command_name=command.command_name,
+            message="codex 任务状态已返回",
+            run_id=run.id,
+            status=run.status,
+            payload={
+                "result_text": run.result_text,
+                "output_text_path": run.output_text_path,
+                "image_paths_json": run.image_paths_json,
+                "error_message": run.error_message,
             },
         )
 
@@ -188,9 +236,30 @@ class CommandRouter:
             raise ValueError("job not found")
         return job
 
+    def _require_codex_run(self, session, run_id):
+        run = session.get(CodexRun, run_id)
+        if run is None:
+            raise ValueError("codex run not found")
+        return run
+
     def _safe_enqueue(self, job_id):
         try:
             result = self.dispatcher.enqueue_job(job_id)
+            return {
+                "dispatch_status": result["dispatch_status"],
+                "queue_name": result["queue_name"],
+                "dispatch_error": None,
+            }
+        except Exception as exc:
+            return {
+                "dispatch_status": "failed",
+                "queue_name": None,
+                "dispatch_error": str(exc),
+            }
+
+    def _safe_enqueue_codex_run(self, run_id):
+        try:
+            result = self.dispatcher.enqueue_codex_run(run_id)
             return {
                 "dispatch_status": result["dispatch_status"],
                 "queue_name": result["queue_name"],

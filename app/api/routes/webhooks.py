@@ -97,6 +97,8 @@ def _format_command_result_message(result):
     ]
     if result.job_id is not None:
         lines.append("job_id={0}".format(result.job_id))
+    if result.run_id is not None:
+        lines.append("run_id={0}".format(result.run_id))
     if result.status:
         lines.append("status={0}".format(result.status))
     return "\n".join(lines)

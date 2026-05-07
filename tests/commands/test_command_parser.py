@@ -50,3 +50,27 @@ def test_parse_command_rejects_unsupported_command():
             sender_id="user-1",
             chat_id="chat-1",
         )
+
+
+def test_parse_codex_command_with_arbitrary_prompt():
+    command = parse_command_text(
+        '/codex prompt="Read README and summarize current blockers"',
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "run_codex"
+    assert command.arguments["prompt"] == "Read README and summarize current blockers"
+
+
+def test_parse_codex_status_command():
+    command = parse_command_text(
+        "/codex_status run=12",
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "codex_status"
+    assert command.arguments["run_id"] == 12

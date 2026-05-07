@@ -5,6 +5,8 @@ from app.commands.schemas import CommandRequest
 
 COMMAND_MAP = {
     "/create": "create_job",
+    "/codex": "run_codex",
+    "/codex_status": "codex_status",
     "/status": "job_status",
     "/retry": "retry_job",
     "/approve": "approve_job",
@@ -51,6 +53,10 @@ def _parse_arguments(command_name, tokens):
             "target_shot_count": int(_require(arguments, "shots")),
             "image_backend": arguments.get("backend", "comfyui_remote"),
         }
+    if command_name == "run_codex":
+        return {"prompt": _require(arguments, "prompt")}
+    if command_name == "codex_status":
+        return {"run_id": int(_require(arguments, "run"))}
     if command_name in ("job_status", "retry_job", "approve_job", "cancel_job", "list_assets"):
         return {"job_id": int(_require(arguments, "job"))}
     if command_name == "runtime_health":

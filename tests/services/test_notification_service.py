@@ -1,9 +1,11 @@
 import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from pathlib import Path
 
 from app.core.enums import JobStatus
 from app.db.base import Base
+from app.db.models.asset import Asset
 from app.db.models.job import Job
 from app.services.notification_service import (
     FeishuAppMessageNotifier,
@@ -188,3 +190,88 @@ def test_notification_service_uses_job_notification_target_id():
         assert record.status == "sent"
         assert record.target_id == "oc_target_from_job"
         assert len(calls) == 2
+
+
+def test_feishu_app_message_notifier_can_upload_image_and_send_image_message(tmp_path):
+    image_path = tmp_path / "preview.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    calls = []
+
+    def handler(request):
+        calls.append((request.url.path, request.headers.get("content-type", ""), request.content))
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(200, json={"tenant_access_token": "tenant-token"})
+        if request.url.path.endswith("/im/v1/images"):
+            return httpx.Response(200, json={"data": {"image_key": "img_v3_test"}})
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "om_image_1"}})
+
+    notifier = FeishuAppMessageNotifier(
+        app_id="cli_a",
+        app_secret="secret_b",
+        open_base_url="https://open.feishu.cn/open-apis",
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://open.feishu.cn",
+        ),
+    )
+
+    payload = notifier.send_image_file(str(image_path), target_id="oc_test_chat")
+
+    assert payload["data"]["message_id"] == "om_image_1"
+    assert calls[1][0].endswith("/im/v1/images")
+    assert "multipart/form-data" in calls[1][1]
+    assert calls[2][0].endswith("/im/v1/messages")
+    assert b"img_v3_test" in calls[2][2]
+
+
+def test_notification_service_can_send_asset_preview_image(tmp_path):
+    image_path = tmp_path / "preview.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(200, json={"tenant_access_token": "tenant-token"})
+        if request.url.path.endswith("/im/v1/images"):
+            return httpx.Response(200, json={"data": {"image_key": "img_v3_asset"}})
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "om_asset_1"}})
+
+    notifier = FeishuAppMessageNotifier(
+        app_id="cli_a",
+        app_secret="secret_b",
+        open_base_url="https://open.feishu.cn/open-apis",
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://open.feishu.cn",
+        ),
+    )
+    service = NotificationService(notifier=notifier)
+
+    with Session(engine) as session:
+        job = create_job(session)
+        job.notification_target_id = "oc_target_from_job"
+        session.commit()
+        session.refresh(job)
+        asset = Asset(
+            job_id=job.id,
+            shot_index=1,
+            prompt_text="hero in rain",
+            negative_prompt="blurry",
+            seed=1001,
+            workflow_json={"provider_name": "codex_cli"},
+            file_path=str(image_path),
+            preview_path=str(image_path),
+            status="completed",
+        )
+        session.add(asset)
+        session.commit()
+        session.refresh(asset)
+
+        record = service.notify_asset_image(session, job, asset, event_type="job_asset_image")
+
+        assert record.status == "sent"
+        assert record.target_id == "oc_target_from_job"
+        assert calls.count("/open-apis/auth/v3/tenant_access_token/internal") == 1
