@@ -357,6 +357,7 @@ pytest -v
 
 ```text
 /codex prompt="Inspect this repo and reply with exactly one line: OK"
+/codex Inspect this repo and reply with exactly one line: OK
 /codex_status run=12
 ```
 
@@ -369,5 +370,12 @@ pytest -v
 
 当前推荐用法：
 1. 飞书工作流任务继续用 `/create ... backend=codex_cli|third_party|comfyui_remote`
-2. 任意 Codex 任务用 `/codex prompt="..."`
-3. 需要追踪时用 `/status job=...` 或 `/codex_status run=...`
+2. 任意 Codex 任务可以直接发普通文本，例如 `Read README and tell me the current blockers`
+3. 如果你仍想显式指定，也可以用 `/codex prompt="..."` 或 `/codex 直接写任务内容`
+4. 需要追踪时用 `/status job=...` 或 `/codex_status run=...`
+
+飞书自然语言入口规则：
+1. 以 `/create`、`/status`、`/retry`、`/approve`、`/cancel`、`/assets`、`/health`、`/codex_status` 开头的消息，按显式命令处理
+2. 以 `/codex` 开头的消息，按显式 Codex 任务处理
+3. 不以 `/` 开头的普通文本，默认整体作为一条 `codex exec` prompt
+4. 这意味着你现在可以把飞书当成 Codex CLI 的自然语言远程入口，而工作流类动作仍然通过显式 `/create` 等命令触发

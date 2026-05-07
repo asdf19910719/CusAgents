@@ -17,14 +17,19 @@ COMMAND_MAP = {
 
 
 def parse_command_text(text, channel, sender_id, chat_id=None, sender_name=None, request_id=None, trace_id=None):
-    tokens = shlex.split(text)
+    normalized_text = (text or "").strip()
+    tokens = shlex.split(normalized_text)
     if not tokens:
         raise ValueError("empty command")
     raw_name = tokens[0]
-    command_name = COMMAND_MAP.get(raw_name)
-    if command_name is None:
-        raise ValueError("unsupported command: " + raw_name)
-    arguments = _parse_arguments(command_name, tokens[1:])
+    if not raw_name.startswith("/"):
+        command_name = "run_codex"
+        arguments = {"prompt": normalized_text}
+    else:
+        command_name = COMMAND_MAP.get(raw_name)
+        if command_name is None:
+            raise ValueError("unsupported command: " + raw_name)
+        arguments = _parse_arguments(command_name, tokens[1:])
     return CommandRequest(
         channel=channel,
         sender_id=sender_id,
@@ -32,13 +37,16 @@ def parse_command_text(text, channel, sender_id, chat_id=None, sender_name=None,
         sender_name=sender_name,
         command_name=command_name,
         arguments=arguments,
-        raw_text=text,
+        raw_text=normalized_text,
         request_id=request_id,
         trace_id=trace_id,
     )
 
 
 def _parse_arguments(command_name, tokens):
+    if command_name == "run_codex" and tokens and all("=" not in token for token in tokens):
+        return {"prompt": " ".join(tokens).strip()}
+
     arguments = {}
     for token in tokens:
         if "=" not in token:

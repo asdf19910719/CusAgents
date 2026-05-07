@@ -74,3 +74,27 @@ def test_parse_codex_status_command():
 
     assert command.command_name == "codex_status"
     assert command.arguments["run_id"] == 12
+
+
+def test_parse_plain_text_as_default_codex_prompt():
+    command = parse_command_text(
+        "Read README and tell me the current architecture risks",
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "run_codex"
+    assert command.arguments["prompt"] == "Read README and tell me the current architecture risks"
+
+
+def test_parse_codex_command_without_prompt_key():
+    command = parse_command_text(
+        "/codex Read README and summarize current blockers",
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "run_codex"
+    assert command.arguments["prompt"] == "Read README and summarize current blockers"
