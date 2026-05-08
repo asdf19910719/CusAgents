@@ -26,6 +26,8 @@ def test_mobile_jobs_page_renders_html():
     assert "text/html" in response.headers["content-type"]
     assert "移动控制台" in response.text
     assert "创建任务" in response.text
+    assert 'value="chatgpt_web"' in response.text
+    assert 'value="dreamina_cli"' in response.text
 
 
 def test_mobile_can_create_job_and_redirect_to_detail():
@@ -52,6 +54,30 @@ def test_mobile_can_create_job_and_redirect_to_detail():
     assert response.headers["location"].startswith("/mobile/jobs/")
 
 
+def test_mobile_can_create_dreamina_cli_job_and_redirect_to_detail():
+    app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/mobile/jobs",
+            data={
+                "topic": "璧涘崥姝︿緺",
+                "style_preset": "cinematic",
+                "target_shot_count": "2",
+                "image_backend": "dreamina_cli",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_dispatcher, None)
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/mobile/jobs/")
+
+
 def test_mobile_can_create_codex_cli_job_and_redirect_to_detail():
     app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
     app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
@@ -65,6 +91,30 @@ def test_mobile_can_create_codex_cli_job_and_redirect_to_detail():
                 "style_preset": "cinematic",
                 "target_shot_count": "2",
                 "image_backend": "codex_cli",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.pop(get_job_dispatcher, None)
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/mobile/jobs/")
+
+
+def test_mobile_can_create_chatgpt_web_job_and_redirect_to_detail():
+    app.dependency_overrides[get_job_dispatcher] = lambda: FakeDispatcher()
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/mobile/jobs",
+            data={
+                "topic": "赛博武侠",
+                "style_preset": "cinematic",
+                "target_shot_count": "2",
+                "image_backend": "chatgpt_web",
             },
             follow_redirects=False,
         )

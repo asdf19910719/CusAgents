@@ -3,6 +3,7 @@ from app.db.models.codex_run import CodexRun
 from app.db.session import SessionLocal
 from app.core.config import load_settings
 from app.services.factory import build_codex_run_service, build_notification_service, build_orchestration_service
+from app.services.conversation_service import ConversationService
 from app.services.codex_run_service import CodexRunService
 
 
@@ -42,7 +43,10 @@ def execute_codex_run(run_id, session_factory, codex_run_service: CodexRunServic
         run = session.get(CodexRun, run_id)
         run.status = "running"
         session.commit()
-        result = codex_run_service.execute_run(run_id=run.id, prompt_text=run.prompt_text)
+        result = codex_run_service.execute_run(
+            run_id=run.id,
+            prompt_text=run.resolved_prompt_text or run.prompt_text,
+        )
         run.status = result["status"]
         run.result_text = result["result_text"]
         run.output_text_path = result["output_text_path"]
@@ -50,6 +54,20 @@ def execute_codex_run(run_id, session_factory, codex_run_service: CodexRunServic
         run.error_message = None
         session.commit()
         session.refresh(run)
+        if run.conversation_session_id is not None and run.result_text:
+            settings = load_settings(allow_placeholder_llm_api_key=True)
+            ConversationService(
+                idle_timeout_seconds=settings.conversation_idle_timeout_seconds,
+                compact_trigger_count=settings.conversation_compact_trigger_count,
+                keep_recent_count=settings.conversation_keep_recent_count,
+            ).append_message(
+                session,
+                session.get(__import__("app.db.models.conversation_session", fromlist=["ConversationSession"]).ConversationSession, run.conversation_session_id),
+                role="assistant",
+                content_text=run.result_text,
+                source_type="codex_reply",
+                source_run_id=run.id,
+            )
         if notification_service is not None:
             summary = [
                 "codex 任务已完成",

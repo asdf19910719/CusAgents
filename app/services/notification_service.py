@@ -170,6 +170,49 @@ class NotificationService:
         session.refresh(record)
         return record
 
+    def notify_video_job_event(self, session, video_job, event_type, message, target_id=None):
+        resolved_target_id = target_id or getattr(video_job, "notification_target_id", None)
+        record = OutboundNotification(
+            video_job_id=getattr(video_job, "id", None),
+            channel_type=self.default_channel_type,
+            target_id=resolved_target_id,
+            event_type=event_type,
+            payload_json={"message": message},
+            status="pending",
+            retry_count=0,
+        )
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+
+        if self.notifier is None:
+            record.status = "skipped"
+            session.commit()
+            session.refresh(record)
+            return record
+
+        if resolved_target_id is None and isinstance(self.notifier, FeishuAppMessageNotifier):
+            record.status = "skipped"
+            record.error_message = None
+            session.commit()
+            session.refresh(record)
+            return record
+
+        try:
+            response_payload = self.notifier.send_message(message, target_id=resolved_target_id)
+            record.status = "sent"
+            record.payload_json = {
+                "message": message,
+                "response_payload": response_payload,
+            }
+            record.error_message = None
+        except Exception as exc:
+            record.status = "failed"
+            record.error_message = str(exc)
+        session.commit()
+        session.refresh(record)
+        return record
+
     def notify_asset_image(self, session, job, asset, event_type="job_asset_image", target_id=None):
         resolved_target_id = target_id or getattr(job, "notification_target_id", None)
         image_path = getattr(asset, "preview_path", None) or getattr(asset, "file_path", None)

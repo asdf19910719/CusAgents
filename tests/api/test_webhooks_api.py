@@ -3,9 +3,11 @@ import hashlib
 import time
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.api.routes.jobs import get_job_dispatcher, get_notification_service
-from app.api.routes.webhooks import get_command_router
+from app.db.models.conversation_session import ConversationSession
+from app.db.session import SessionLocal
 from app.main import app
 
 
@@ -128,6 +130,59 @@ def test_feishu_event_callback_can_query_job_status():
     assert payload["command_name"] == "job_status"
     assert payload["job_id"] == job_id
     assert payload["status"] == "pending"
+
+
+def test_feishu_event_callback_can_reset_conversation():
+    class FakeNotificationService:
+        def notify_job_event(self, session, job, event_type, message, target_id=None):
+            return None
+
+    app.dependency_overrides[get_notification_service] = lambda: FakeNotificationService()
+    client = TestClient(app)
+
+    try:
+        first = client.post(
+            "/webhooks/feishu/events",
+            json={
+                "type": "event_callback",
+                "event": {
+                    "sender": {"sender_id": {"open_id": "ou_test_user"}},
+                    "message": {
+                        "chat_id": "oc_test_chat",
+                        "message_type": "text",
+                        "content": json.dumps({"text": "remember this context"}),
+                    },
+                },
+            },
+        )
+        second = client.post(
+            "/webhooks/feishu/events",
+            json={
+                "type": "event_callback",
+                "event": {
+                    "sender": {"sender_id": {"open_id": "ou_test_user"}},
+                    "message": {
+                        "chat_id": "oc_test_chat",
+                        "message_type": "text",
+                        "content": json.dumps({"text": "/new"}),
+                    },
+                },
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_notification_service, None)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["command_name"] == "reset_conversation"
+    with SessionLocal() as session:
+        conversations = (
+            session.query(ConversationSession)
+            .filter_by(chat_id="oc_test_chat")
+            .order_by(ConversationSession.id.asc())
+            .all()
+        )
+        assert len(conversations) >= 2
 
 
 def test_feishu_event_callback_rejects_invalid_verification_token(monkeypatch):

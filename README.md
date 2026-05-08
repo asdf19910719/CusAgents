@@ -1,11 +1,15 @@
 # Custom Agents
 
-一个面向内容生成流水线的最小可运行服务骨架，当前已经支持两类出图后端：
+一个面向内容生成流水线的最小可运行服务骨架，当前已经支持四类出图后端：
 
 1. `comfyui_remote`
    当前项目通过 HTTP API 调用另一台机器或本机上的 ComfyUI
 2. `third_party`
    当前项目通过第三方图像 API 出图
+3. `codex_cli`
+   当前项目通过本机已登录的 Codex CLI 做实验型出图
+4. `chatgpt_web`
+   当前项目通过 Playwright 复用独立网页登录态，在 ChatGPT 网页中模拟人工操作出图
 
 文本链路保持统一：
 
@@ -57,8 +61,19 @@
 22. `MOBILE_SESSION_MAX_AGE_SECONDS`
 23. `CODEX_CLI_COMMAND`
 24. `CODEX_CLI_MODEL`
-25. `AUTO_ENQUEUE_JOBS`
-26. `QUEUE_NAME`
+25. `CHATGPT_WEB_BASE_URL`
+26. `CHATGPT_WEB_PROFILE_DIR`
+27. `CHATGPT_WEB_HEADLESS`
+28. `CHATGPT_WEB_TIMEOUT_SECONDS`
+29. `CHATGPT_WEB_BROWSER_CHANNEL`
+30. `CHATGPT_WEB_EXECUTABLE_PATH`
+31. `CHATGPT_WEB_CDP_URL`
+32. `CHATGPT_WEB_IMAGE_PROMPT_SUFFIX`
+33. `AUTO_ENQUEUE_JOBS`
+34. `QUEUE_NAME`
+35. `CONVERSATION_IDLE_TIMEOUT_SECONDS`
+36. `CONVERSATION_COMPACT_TRIGGER_COUNT`
+37. `CONVERSATION_KEEP_RECENT_COUNT`
 
 说明：
 
@@ -68,12 +83,16 @@
    `comfyui_remote`
    `third_party`
    `codex_cli`
+   `chatgpt_web`
 4. `FEISHU_NOTIFY_WEBHOOK_URL` 配置后，系统会在任务创建、等待审核、失败等事件写通知日志，并尝试推送飞书 webhook
 5. `FEISHU_VERIFICATION_TOKEN` 用于飞书事件入口的最小 token 校验
 6. `FEISHU_ENCRYPT_KEY` 用于飞书事件入口签名校验；配置后会同时启用时间窗校验和 Redis 优先、内存兜底的重放保护
 7. `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 与 `FEISHU_OPEN_BASE_URL` 用于飞书应用消息回发与长连接客户端
 8. `MOBILE_ACCESS_TOKEN` 配置后，手机轻控制页会要求先登录，再通过短期 session cookie 访问
 9. `CODEX_CLI_COMMAND` 与 `CODEX_CLI_MODEL` 用于实验型 `codex_cli` 出图后端
+10. `CHATGPT_WEB_*` 用于浏览器自动化出图后端；首次使用前需要先执行登录脚本，写入独立 Playwright profile
+11. `CONVERSATION_IDLE_TIMEOUT_SECONDS` 用于控制同一个飞书 `chat_id` 的 Codex 会话空闲多久后自动切新会话
+12. `CONVERSATION_COMPACT_TRIGGER_COUNT` 与 `CONVERSATION_KEEP_RECENT_COUNT` 用于控制会话摘要压缩
 
 ## 本地安装
 
@@ -100,6 +119,24 @@ curl http://127.0.0.1:8000/admin/runtime/health
 ```
 
 这个接口会返回数据库、Redis、LLM 配置、`comfyui_remote`、`third_party`、`codex_cli` 的当前状态，适合联调前快速判断是配置缺失、服务不可达，还是队列未开启。
+
+## 初始化 ChatGPT Web 登录态
+
+如果要使用 `chatgpt_web`，推荐使用普通 Chrome + CDP 模式。先准备独立浏览器 profile：
+
+```bash
+python scripts/run_chatgpt_web_browser.py --check
+python scripts/run_chatgpt_web_browser.py
+```
+
+说明：
+
+1. 该脚本会打开普通 Chrome，并通过 `CHATGPT_WEB_CDP_URL` 暴露给 Playwright 复用
+2. 会话目录默认是 `CHATGPT_WEB_PROFILE_DIR`
+3. 请在打开的页面里完成 ChatGPT 登录
+4. 建议不要复用你日常浏览器 profile，当前实现默认使用独立 profile
+5. `CHATGPT_WEB_EXECUTABLE_PATH` 推荐指向真实 Chrome，例如 `C:\Program Files\Google\Chrome\Application\chrome.exe`
+6. 如果不使用 CDP 模式，也可以用 `python scripts/run_chatgpt_web_login.py` 打开 Playwright 持久化浏览器，但它更容易触发 ChatGPT 登录挑战
 
 ## 启动 Worker
 
@@ -162,6 +199,30 @@ curl -X POST http://127.0.0.1:8000/jobs ^
 python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend comfyui_remote
 python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend third_party
 python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend codex_cli
+python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend chatgpt_web
+python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend dreamina_cli
+```
+
+## Dreamina / 即梦 CLI
+
+当前新增两个即梦链路：
+
+1. `dreamina_cli`：图片后端，可用于 `POST /jobs`、移动端创建任务和飞书 `/create ... backend=dreamina_cli`。
+2. `dreamina_video_cli`：独立视频后端，可用于 `POST /videos` 和飞书 `/video prompt="..." duration=4 ratio=16:9 model=seedance2.0`。项目默认视频模型是 `seedance2.0`。
+
+即梦任务会消耗账号额度，默认不自动重试。运行前建议检查：
+
+```bash
+C:\Users\91799\bin\dreamina.exe user_credit
+C:\Users\91799\bin\dreamina.exe text2image --help
+C:\Users\91799\bin\dreamina.exe text2video --help
+```
+
+视频任务通常需要几十分钟甚至更久。`querying` 是可恢复长任务状态，不按短任务失败处理；系统会保留 `submit_id`，后续可查询与恢复：
+
+```bash
+curl -X POST http://127.0.0.1:8000/videos/{video_id}/refresh
+C:\Users\91799\bin\dreamina.exe query_result --submit_id=<submit_id> --download_dir=./output/dreamina/videos
 ```
 
 当前 `POST /jobs` 返回中会包含：
@@ -175,6 +236,7 @@ python scripts/demo_request.py --base-url http://127.0.0.1:8000 --image-backend 
 1. `comfyui_remote`
 2. `third_party`
 3. `codex_cli`
+4. `chatgpt_web`
 
 如果传入其它值，API 会直接返回 `422`，避免任务入库后才在 Worker 阶段失败。
 
@@ -265,6 +327,8 @@ GET  /mobile/assets/{asset_id}/preview
    适合台式机不可用或需要快速补图
 3. 把 `codex_cli` 作为实验后端
    适合你本人在已登录 ChatGPT/Codex 环境下做本机试验，不建议作为主生产后端
+4. 把 `chatgpt_web` 作为半自动稳定后端
+   适合你已经有 ChatGPT 网页登录态、接受页面结构偶发波动且希望绕开第三方图片 API 时使用
 
 这意味着：
 
@@ -294,6 +358,7 @@ pytest -v
 10. 第三方图像 Provider
 11. 多后端工厂装配
 12. `codex_cli` 实验型图片后端
+13. `chatgpt_web` 浏览器自动化图片后端
 13. 质量检查
 14. 编排服务
 15. 成本统计
@@ -323,6 +388,7 @@ pytest -v
 7. 当前飞书重放保护已升级为 Redis 优先、内存兜底；如果以后做多实例部署，仍建议继续复用同一 Redis 并补监控与过期策略可观测性。
 8. 飞书长连接当前只接了 `p2_im_message_receive_v1` 文本消息事件，还没有扩到卡片交互或更复杂事件类型。
 9. `codex_cli` 后端依赖本机已安装并登录的 Codex CLI，适合实验和人工参与场景，不建议直接当主生产出图链路。
+10. `chatgpt_web` 后端依赖 ChatGPT 网页结构与账号登录态，属于半自动稳定方案；页面改版、未登录或下载按钮变化时会直接报错，不会静默降级。
 
 ## 下一步建议
 
@@ -335,6 +401,7 @@ pytest -v
 7. 视需要补 Feishu 命令 DSL、异步结果卡片和更细的通知策略
 8. 视飞书侧配置决定是否保留 webhook 与长连接双入口并存
 9. 如果继续保留 `codex_cli`，建议后续再补配额、耗时和失败分类统计
+10. 如果继续强化 `chatgpt_web`，建议后续把选择器探测、失败截图和多站点适配抽成更清晰的 adapter 层
 
 ## 最新补充：飞书图片回传与任意 Codex CLI 指令
 
@@ -358,6 +425,7 @@ pytest -v
 ```text
 /codex prompt="Inspect this repo and reply with exactly one line: OK"
 /codex Inspect this repo and reply with exactly one line: OK
+/new
 /codex_status run=12
 ```
 
@@ -369,7 +437,7 @@ pytest -v
 5. `/codex_status` 可查询指定 `run_id` 的当前状态、结果摘要和输出文件路径
 
 当前推荐用法：
-1. 飞书工作流任务继续用 `/create ... backend=codex_cli|third_party|comfyui_remote`
+1. 飞书工作流任务继续用 `/create ... backend=codex_cli|third_party|comfyui_remote|chatgpt_web`
 2. 任意 Codex 任务可以直接发普通文本，例如 `Read README and tell me the current blockers`
 3. 如果你仍想显式指定，也可以用 `/codex prompt="..."` 或 `/codex 直接写任务内容`
 4. 需要追踪时用 `/status job=...` 或 `/codex_status run=...`
@@ -378,4 +446,12 @@ pytest -v
 1. 以 `/create`、`/status`、`/retry`、`/approve`、`/cancel`、`/assets`、`/health`、`/codex_status` 开头的消息，按显式命令处理
 2. 以 `/codex` 开头的消息，按显式 Codex 任务处理
 3. 不以 `/` 开头的普通文本，默认整体作为一条 `codex exec` prompt
-4. 这意味着你现在可以把飞书当成 Codex CLI 的自然语言远程入口，而工作流类动作仍然通过显式 `/create` 等命令触发
+4. `/new` 用于手动重置当前 `chat_id` 的共享 Codex 会话
+5. 这意味着你现在可以把飞书当成 Codex CLI 的自然语言远程入口，而工作流类动作仍然通过显式 `/create` 等命令触发
+
+正式会话规则：
+1. 普通文本和 `/codex` 会进入按 `chat_id` 共享的正式会话
+2. `/create`、`/status`、`/retry`、`/approve`、`/cancel`、`/assets`、`/health`、`/codex_status` 不进入会话历史
+3. 同一个 `chat_id` 空闲超过 `CONVERSATION_IDLE_TIMEOUT_SECONDS` 后，会自动切到新会话
+4. 当会话消息过长时，系统会把更早消息压缩成摘要，只保留最近若干条原文消息
+5. 当前底层仍然是每次新起一次 `codex exec`，但会话层会把摘要和最近消息组装成连续上下文

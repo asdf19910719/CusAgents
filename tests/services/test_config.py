@@ -28,6 +28,35 @@ def clear_settings_env(monkeypatch):
         "CODEX_CLI_MODEL",
         "CODEX_CLI_TIMEOUT_SECONDS",
         "CODEX_RUN_TIMEOUT_SECONDS",
+        "CHATGPT_WEB_BASE_URL",
+        "CHATGPT_WEB_PROFILE_DIR",
+        "CHATGPT_WEB_HEADLESS",
+        "CHATGPT_WEB_TIMEOUT_SECONDS",
+        "CHATGPT_WEB_BROWSER_CHANNEL",
+        "CHATGPT_WEB_EXECUTABLE_PATH",
+        "CHATGPT_WEB_CDP_URL",
+        "CHATGPT_WEB_IMAGE_PROMPT_SUFFIX",
+        "DREAMINA_CLI_PATH",
+        "DREAMINA_IMAGE_MODEL_VERSION",
+        "DREAMINA_IMAGE_RATIO",
+        "DREAMINA_IMAGE_RESOLUTION_TYPE",
+        "DREAMINA_IMAGE_POLL_SECONDS",
+        "DREAMINA_IMAGE_TIMEOUT_SECONDS",
+        "DREAMINA_IMAGE_OUTPUT_DIR",
+        "DREAMINA_IMAGE_RETRY_ATTEMPTS",
+        "DREAMINA_VIDEO_MODEL_VERSION",
+        "DREAMINA_VIDEO_RATIO",
+        "DREAMINA_VIDEO_DURATION",
+        "DREAMINA_VIDEO_RESOLUTION",
+        "DREAMINA_VIDEO_POLL_SECONDS",
+        "DREAMINA_VIDEO_TIMEOUT_SECONDS",
+        "DREAMINA_VIDEO_OUTPUT_DIR",
+        "DREAMINA_VIDEO_RETRY_ATTEMPTS",
+        "CONVERSATION_IDLE_TIMEOUT_SECONDS",
+        "CONVERSATION_COMPACT_TRIGGER_COUNT",
+        "CONVERSATION_KEEP_RECENT_COUNT",
+        "CONVERSATION_RETENTION_SECONDS",
+        "CONVERSATION_CLEANUP_BATCH_SIZE",
         )
     for key in keys:
         monkeypatch.delenv(key, raising=False)
@@ -65,6 +94,35 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.codex_cli_model == ""
     assert settings.codex_cli_timeout_seconds == 180
     assert settings.codex_run_timeout_seconds == 300
+    assert settings.chatgpt_web_base_url == "https://chatgpt.com/"
+    assert settings.chatgpt_web_profile_dir == "./runtime/playwright/chatgpt_web_profile"
+    assert settings.chatgpt_web_headless is True
+    assert settings.chatgpt_web_timeout_seconds == 180.0
+    assert settings.chatgpt_web_browser_channel == ""
+    assert settings.chatgpt_web_executable_path == ""
+    assert settings.chatgpt_web_cdp_url == ""
+    assert settings.chatgpt_web_image_prompt_suffix == ""
+    assert settings.dreamina_cli_path == "C:\\Users\\91799\\bin\\dreamina.exe"
+    assert settings.dreamina_image_model_version == "5.0"
+    assert settings.dreamina_image_ratio == "16:9"
+    assert settings.dreamina_image_resolution_type == "2k"
+    assert settings.dreamina_image_poll_seconds == 120
+    assert settings.dreamina_image_timeout_seconds == 180
+    assert settings.dreamina_image_output_dir == "./output/dreamina/images"
+    assert settings.dreamina_image_retry_attempts == 0
+    assert settings.dreamina_video_model_version == "seedance2.0"
+    assert settings.dreamina_video_ratio == "16:9"
+    assert settings.dreamina_video_duration == 5
+    assert settings.dreamina_video_resolution == "720p"
+    assert settings.dreamina_video_poll_seconds == 180
+    assert settings.dreamina_video_timeout_seconds == 300
+    assert settings.dreamina_video_output_dir == "./output/dreamina/videos"
+    assert settings.dreamina_video_retry_attempts == 0
+    assert settings.conversation_idle_timeout_seconds == 7200
+    assert settings.conversation_compact_trigger_count == 20
+    assert settings.conversation_keep_recent_count == 12
+    assert settings.conversation_retention_seconds == 604800
+    assert settings.conversation_cleanup_batch_size == 100
 
 
 def test_settings_require_llm_api_key(monkeypatch):

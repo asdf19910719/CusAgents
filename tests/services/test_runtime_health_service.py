@@ -24,12 +24,15 @@ def test_runtime_health_service_reports_reachable_backends():
         THIRD_PARTY_IMAGE_BASE_URL="https://image.example.com",
         THIRD_PARTY_IMAGE_API_KEY="image-key",
         THIRD_PARTY_IMAGE_MODEL="vendor-model",
+        CHATGPT_WEB_BASE_URL="https://chatgpt.com/",
+        CHATGPT_WEB_PROFILE_DIR="./runtime/playwright/chatgpt_web_profile",
     )
 
     service = RuntimeHealthService(
         settings=settings,
         redis_ping=lambda url: {"status": "ok", "detail": url},
         tcp_check=lambda url: {"status": "ok", "detail": url},
+        dreamina_credit_check=lambda path: {"status": "ok", "detail": '{"total_credit":100}'},
     )
 
     result = service.collect(FakeSession())
@@ -41,6 +44,10 @@ def test_runtime_health_service_reports_reachable_backends():
     assert result["checks"]["image_backends"]["default_backend"] == "comfyui_remote"
     assert result["checks"]["image_backends"]["items"]["comfyui_remote"]["status"] == "ok"
     assert result["checks"]["image_backends"]["items"]["third_party"]["status"] == "ok"
+    assert result["checks"]["image_backends"]["items"]["chatgpt_web"]["status"] == "ok"
+    assert result["checks"]["image_backends"]["items"]["chatgpt_web"]["profile_dir"] == "./runtime/playwright/chatgpt_web_profile"
+    assert result["checks"]["image_backends"]["items"]["dreamina_cli"]["status"] == "configured"
+    assert result["checks"]["image_backends"]["items"]["dreamina_cli"]["credit_status"] == "ok"
 
 
 def test_runtime_health_service_marks_missing_or_unreachable_dependencies():
@@ -52,12 +59,14 @@ def test_runtime_health_service_marks_missing_or_unreachable_dependencies():
         AUTO_ENQUEUE_JOBS=False,
         COMFYUI_BASE_URL="http://127.0.0.1:8188",
         IMAGE_BACKEND="third_party",
+        CHATGPT_WEB_PROFILE_DIR="./runtime/playwright/chatgpt_web_profile",
     )
 
     service = RuntimeHealthService(
         settings=settings,
         redis_ping=lambda url: {"status": "error", "detail": url},
         tcp_check=lambda url: {"status": "error", "detail": url},
+        dreamina_credit_check=lambda path: {"status": "error", "detail": "not logged in"},
     )
 
     result = service.collect(FakeSession())
@@ -68,3 +77,4 @@ def test_runtime_health_service_marks_missing_or_unreachable_dependencies():
     assert result["checks"]["llm"]["status"] == "missing_config"
     assert result["checks"]["image_backends"]["items"]["comfyui_remote"]["status"] == "error"
     assert result["checks"]["image_backends"]["items"]["third_party"]["status"] == "disabled"
+    assert result["checks"]["image_backends"]["items"]["chatgpt_web"]["status"] == "error"

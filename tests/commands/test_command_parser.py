@@ -42,6 +42,33 @@ def test_parse_health_command_without_arguments():
     assert command.arguments == {}
 
 
+def test_parse_video_command():
+    command = parse_command_text(
+        '/video prompt="cinematic city sunrise" duration=4 ratio=16:9 model=seedance2.0',
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "create_video"
+    assert command.arguments["prompt"] == "cinematic city sunrise"
+    assert command.arguments["duration"] == 4
+    assert command.arguments["ratio"] == "16:9"
+    assert command.arguments["model_version"] == "seedance2.0"
+
+
+def test_parse_video_status_command():
+    command = parse_command_text(
+        "/video_status video=12",
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "video_status"
+    assert command.arguments["video_id"] == 12
+
+
 def test_parse_command_rejects_unsupported_command():
     with pytest.raises(ValueError):
         parse_command_text(
@@ -98,3 +125,15 @@ def test_parse_codex_command_without_prompt_key():
 
     assert command.command_name == "run_codex"
     assert command.arguments["prompt"] == "Read README and summarize current blockers"
+
+
+def test_parse_new_command():
+    command = parse_command_text(
+        "/new",
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "reset_conversation"
+    assert command.arguments == {}

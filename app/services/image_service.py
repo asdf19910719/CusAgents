@@ -38,13 +38,23 @@ class ImageGenerationService:
                     status="completed",
                 )
             except Exception as exc:
+                workflow_json = {"provider_name": backend}
+                error_metadata = getattr(exc, "metadata", None)
+                if isinstance(error_metadata, dict):
+                    workflow_json.update(error_metadata)
+                submit_id = getattr(exc, "submit_id", None)
+                if submit_id:
+                    workflow_json["submit_id"] = submit_id
+                gen_status = getattr(exc, "gen_status", None)
+                if gen_status:
+                    workflow_json["gen_status"] = gen_status
                 asset = Asset(
                     job_id=job.id,
                     shot_index=prompt.shot_index,
                     prompt_text=prompt.positive_prompt,
                     negative_prompt=prompt.negative_prompt,
                     seed=seed,
-                    workflow_json={"provider_name": backend},
+                    workflow_json=workflow_json,
                     file_path="",
                     preview_path=str(exc),
                     status="failed",

@@ -7,6 +7,7 @@ from app.core.enums import JobStatus
 from app.db.base import Base
 from app.db.models.asset import Asset
 from app.db.models.job import Job
+from app.db.models.video_job import VideoJob
 from app.services.notification_service import (
     FeishuAppMessageNotifier,
     FeishuWebhookNotifier,
@@ -274,4 +275,59 @@ def test_notification_service_can_send_asset_preview_image(tmp_path):
 
         assert record.status == "sent"
         assert record.target_id == "oc_target_from_job"
+        assert calls.count("/open-apis/auth/v3/tenant_access_token/internal") == 1
+
+
+def test_notification_service_can_send_video_job_completion_notification():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if request.url.path.endswith("/tenant_access_token/internal"):
+            return httpx.Response(200, json={"tenant_access_token": "tenant-token"})
+        return httpx.Response(200, json={"code": 0, "data": {"message_id": "om_video_1"}})
+
+    notifier = FeishuAppMessageNotifier(
+        app_id="cli_a",
+        app_secret="secret_b",
+        open_base_url="https://open.feishu.cn/open-apis",
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url="https://open.feishu.cn",
+        ),
+    )
+    service = NotificationService(notifier=notifier)
+
+    with Session(engine) as session:
+        video_job = VideoJob(
+            request_id="video-req-notify",
+            topic="city sunrise",
+            prompt="cinematic city sunrise",
+            backend="dreamina_video_cli",
+            mode="text2video",
+            status="completed",
+            current_step="completed",
+            duration=4,
+            ratio="16:9",
+            video_resolution="720p",
+            model_version="seedance2.0",
+            notification_target_id="oc_test_chat",
+        )
+        session.add(video_job)
+        session.commit()
+        session.refresh(video_job)
+
+        record = service.notify_video_job_event(
+            session,
+            video_job,
+            event_type="video_job_completed",
+            message="视频任务已完成",
+        )
+
+        assert record.status == "sent"
+        assert record.video_job_id == video_job.id
+        assert record.event_type == "video_job_completed"
+        assert record.payload_json["message"] == "视频任务已完成"
         assert calls.count("/open-apis/auth/v3/tenant_access_token/internal") == 1

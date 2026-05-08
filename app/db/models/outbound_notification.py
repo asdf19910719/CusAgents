@@ -9,6 +9,7 @@ class OutboundNotification(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    video_job_id: Mapped[int | None] = mapped_column(ForeignKey("video_jobs.id"), nullable=True)
     channel_type: Mapped[str] = mapped_column(String(32), nullable=False)
     target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -19,3 +20,4 @@ class OutboundNotification(Base):
     created_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     job: Mapped["Job"] = relationship(back_populates="notifications")
+    video_job: Mapped["VideoJob"] = relationship(back_populates="notifications")

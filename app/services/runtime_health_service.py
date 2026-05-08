@@ -1,4 +1,6 @@
 import socket
+import subprocess
+from pathlib import Path
 from shutil import which
 from urllib.parse import urlparse
 
@@ -7,10 +9,11 @@ from sqlalchemy import text
 
 
 class RuntimeHealthService:
-    def __init__(self, settings, redis_ping=None, tcp_check=None):
+    def __init__(self, settings, redis_ping=None, tcp_check=None, dreamina_credit_check=None):
         self.settings = settings
         self.redis_ping = redis_ping or self._redis_ping
         self.tcp_check = tcp_check or self._tcp_check
+        self.dreamina_credit_check = dreamina_credit_check or self._dreamina_credit_check
 
     def collect(self, db):
         checks = {
@@ -68,15 +71,65 @@ class RuntimeHealthService:
             items["third_party"]["model"] = self.settings.third_party_image_model
         else:
             items["third_party"] = {"status": "disabled"}
+        items["chatgpt_web"] = self.tcp_check(self.settings.chatgpt_web_base_url)
+        items["chatgpt_web"]["base_url"] = self.settings.chatgpt_web_base_url
+        items["chatgpt_web"]["profile_dir"] = self.settings.chatgpt_web_profile_dir
+        items["chatgpt_web"]["headless"] = self.settings.chatgpt_web_headless
         codex_command = self.settings.codex_cli_command
         codex_path = which(codex_command)
         if codex_path:
             items["codex_cli"] = {"status": "configured", "command": codex_command, "path": codex_path}
         else:
             items["codex_cli"] = {"status": "disabled", "command": codex_command}
+        items["dreamina_cli"] = self._check_dreamina_cli()
         return {
             "default_backend": self.settings.image_backend,
             "items": items,
+        }
+
+    def _check_dreamina_cli(self):
+        command = self.settings.dreamina_cli_path
+        resolved_path = which(command) or command
+        if not Path(resolved_path).exists():
+            return {
+                "status": "disabled",
+                "command": command,
+                "path": resolved_path,
+                "credit_status": "unknown",
+            }
+        item = {
+            "status": "configured",
+            "command": command,
+            "path": resolved_path,
+            "model_version": self.settings.dreamina_image_model_version,
+            "ratio": self.settings.dreamina_image_ratio,
+            "resolution_type": self.settings.dreamina_image_resolution_type,
+            "video_model_version": self.settings.dreamina_video_model_version,
+            "video_resolution": self.settings.dreamina_video_resolution,
+            "credit_status": "unknown",
+        }
+        try:
+            credit_result = self.dreamina_credit_check(resolved_path)
+            item["credit_status"] = credit_result["status"]
+            item["credit_detail"] = credit_result.get("detail", "")
+        except Exception as exc:
+            item["credit_status"] = "error"
+            item["credit_detail"] = str(exc)
+        return item
+
+    def _dreamina_credit_check(self, resolved_path):
+        result = subprocess.run(
+            [resolved_path, "user_credit"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=15,
+        )
+        return {
+            "status": "ok" if result.returncode == 0 else "error",
+            "detail": (result.stdout or result.stderr or "").strip()[:500],
         }
 
     def _redis_ping(self, redis_url):

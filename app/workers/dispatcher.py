@@ -9,12 +9,18 @@ class JobDispatcher:
     def enqueue_codex_run(self, run_id):
         raise NotImplementedError
 
+    def enqueue_video_job(self, video_id):
+        raise NotImplementedError
+
 
 class NoopJobDispatcher(JobDispatcher):
     def enqueue_job(self, job_id):
         return {"dispatch_status": "skipped", "queue_name": None}
 
     def enqueue_codex_run(self, run_id):
+        return {"dispatch_status": "skipped", "queue_name": None}
+
+    def enqueue_video_job(self, video_id):
         return {"dispatch_status": "skipped", "queue_name": None}
 
 
@@ -31,6 +37,11 @@ class RQJobDispatcher(JobDispatcher):
     def enqueue_codex_run(self, run_id):
         queue = create_queue(self.redis_url, queue_name=self.queue_name)
         queue.enqueue("app.workers.jobs.run_configured_codex_run", run_id)
+        return {"dispatch_status": "enqueued", "queue_name": self.queue_name}
+
+    def enqueue_video_job(self, video_id):
+        queue = create_queue(self.redis_url, queue_name=self.queue_name)
+        queue.enqueue("app.workers.video_jobs.run_configured_video_job", video_id)
         return {"dispatch_status": "enqueued", "queue_name": self.queue_name}
 
 

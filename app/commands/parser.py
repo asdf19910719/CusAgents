@@ -7,12 +7,15 @@ COMMAND_MAP = {
     "/create": "create_job",
     "/codex": "run_codex",
     "/codex_status": "codex_status",
+    "/new": "reset_conversation",
     "/status": "job_status",
     "/retry": "retry_job",
     "/approve": "approve_job",
     "/cancel": "cancel_job",
     "/assets": "list_assets",
     "/health": "runtime_health",
+    "/video": "create_video",
+    "/video_status": "video_status",
 }
 
 
@@ -65,10 +68,23 @@ def _parse_arguments(command_name, tokens):
         return {"prompt": _require(arguments, "prompt")}
     if command_name == "codex_status":
         return {"run_id": int(_require(arguments, "run"))}
+    if command_name == "reset_conversation":
+        return {}
     if command_name in ("job_status", "retry_job", "approve_job", "cancel_job", "list_assets"):
         return {"job_id": int(_require(arguments, "job"))}
     if command_name == "runtime_health":
         return {}
+    if command_name == "create_video":
+        return {
+            "prompt": _require(arguments, "prompt"),
+            "duration": int(arguments.get("duration", "5")),
+            "ratio": arguments.get("ratio", "16:9"),
+            "video_resolution": arguments.get("resolution", "720p"),
+            "model_version": arguments.get("model", "seedance2.0"),
+            "backend": arguments.get("backend", "dreamina_video_cli"),
+        }
+    if command_name == "video_status":
+        return {"video_id": int(_require(arguments, "video"))}
     raise ValueError("unsupported command: " + command_name)
 
 

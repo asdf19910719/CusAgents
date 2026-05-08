@@ -103,6 +103,43 @@ def test_long_connection_handler_ignores_non_text_messages():
     assert result is None
 
 
+def test_long_connection_handler_can_reset_conversation():
+    from app.channels.feishu_long_connection import FeishuLongConnectionHandler
+    from app.db.models.conversation_session import ConversationSession
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    notification_service = FakeNotificationService()
+    settings = Settings(_env_file=None, LLM_API_KEY="test-key")
+
+    def command_router_factory():
+        return CommandRouter(
+            dispatcher=FakeDispatcher(),
+            notification_service=notification_service,
+            settings=settings,
+        )
+
+    handler = FeishuLongConnectionHandler(
+        session_factory=session_factory,
+        command_router_factory=command_router_factory,
+    )
+
+    handler.handle_message_receive_v1(_build_event("remember this context"))
+    result = handler.handle_message_receive_v1(_build_event("/new"))
+
+    assert result.success is True
+    assert result.command_name == "reset_conversation"
+    with session_factory() as session:
+        conversations = (
+            session.query(ConversationSession)
+            .filter_by(chat_id="oc_test_chat")
+            .order_by(ConversationSession.id.asc())
+            .all()
+        )
+        assert len(conversations) >= 2
+
+
 def test_long_connection_client_builder_uses_sdk_client_and_registers_handler():
     from app.channels.feishu_long_connection import FeishuLongConnectionHandler, FeishuLongConnectionRunner
 

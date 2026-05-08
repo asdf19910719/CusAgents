@@ -285,6 +285,8 @@ def mobile_jobs_page(request: Request, db: Session = Depends(get_db)):
           <option value="third_party">third_party</option>
           <option value="comfyui_remote">comfyui_remote</option>
           <option value="codex_cli">codex_cli</option>
+          <option value="chatgpt_web">chatgpt_web</option>
+          <option value="dreamina_cli">dreamina_cli</option>
         </select>
       </div>
     </div>
@@ -373,7 +375,7 @@ async def create_mobile_job(
         target_shot_count = int(target_shot_count_raw)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="target_shot_count must be an integer") from exc
-    if image_backend not in ("comfyui_remote", "third_party", "codex_cli"):
+    if image_backend not in ("comfyui_remote", "third_party", "codex_cli", "chatgpt_web", "dreamina_cli"):
         raise HTTPException(status_code=422, detail="invalid image backend")
     if target_shot_count < 1:
         raise HTTPException(status_code=422, detail="target_shot_count must be positive")

@@ -8,6 +8,7 @@ from app.db.models.asset import Asset
 from app.db.models.job import Job
 from app.schemas.prompt import PromptItem
 from app.providers.image.base import ImageGenerationResult
+from app.providers.image.dreamina_cli_client import DreaminaCliError
 from app.services.image_service import ImageGenerationService
 
 
@@ -176,3 +177,48 @@ def test_image_generation_service_can_switch_to_codex_cli_backend(tmp_path):
         assert len(assets) == 1
         assert assets[0].workflow_json["provider_name"] == "codex_cli"
         assert "codex_cli-1.png" in assets[0].file_path
+
+
+def test_image_generation_service_preserves_dreamina_submit_id_on_querying_failure(tmp_path):
+    class QueryingDreaminaProvider:
+        def generate_image(self, shot_index, positive_prompt, negative_prompt, style_preset, seed):
+            raise DreaminaCliError(
+                "dreamina cli text2image task is still querying; submit_id=submit-querying",
+                submit_id="submit-querying",
+                gen_status="querying",
+                metadata={
+                    "provider_name": "dreamina_cli",
+                    "submit_id": "submit-querying",
+                    "gen_status": "querying",
+                    "command": ["dreamina", "text2image"],
+                },
+            )
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    service = ImageGenerationService(
+        providers={"dreamina_cli": QueryingDreaminaProvider()},
+        default_backend="dreamina_cli",
+        output_dir=str(tmp_path),
+    )
+    prompts = [
+        PromptItem(
+            shot_index=1,
+            positive_prompt="hero in rain",
+            negative_prompt="blurry",
+            style_tags=["cinematic"],
+        )
+    ]
+
+    with Session(engine) as session:
+        job = create_job(session)
+        job.image_backend = "dreamina_cli"
+        session.commit()
+
+        assets = service.generate_assets(session, job, prompts, "cinematic")
+
+        assert len(assets) == 1
+        assert assets[0].status == "failed"
+        assert assets[0].workflow_json["provider_name"] == "dreamina_cli"
+        assert assets[0].workflow_json["submit_id"] == "submit-querying"
+        assert assets[0].workflow_json["gen_status"] == "querying"

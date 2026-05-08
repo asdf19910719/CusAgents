@@ -63,6 +63,40 @@ def test_create_job_accepts_codex_cli_backend():
     assert create_response.json()["image_backend"] == "codex_cli"
 
 
+def test_create_job_accepts_chatgpt_web_backend():
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/jobs",
+        json={
+            "topic": "冷血剑客复仇",
+            "style_preset": "cinematic",
+            "target_shot_count": 1,
+            "image_backend": "chatgpt_web",
+        },
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["image_backend"] == "chatgpt_web"
+
+
+def test_create_job_accepts_dreamina_cli_backend():
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/jobs",
+        json={
+            "topic": "鍐疯鍓戝澶嶄粐",
+            "style_preset": "cinematic",
+            "target_shot_count": 1,
+            "image_backend": "dreamina_cli",
+        },
+    )
+
+    assert create_response.status_code == 201
+    assert create_response.json()["image_backend"] == "dreamina_cli"
+
+
 def test_create_job_enqueues_when_dispatcher_is_overridden():
     class FakeDispatcher:
         def __init__(self):

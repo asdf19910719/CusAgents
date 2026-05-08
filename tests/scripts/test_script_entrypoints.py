@@ -61,3 +61,30 @@ def test_demo_request_help_mentions_codex_cli_backend():
 
     assert result.returncode == 0
     assert "codex_cli" in result.stdout
+    assert "chatgpt_web" in result.stdout
+
+
+def test_run_chatgpt_web_login_script_supports_check_mode():
+    result = run_python_script(
+        "scripts/run_chatgpt_web_login.py",
+        {
+            "LLM_API_KEY": "placeholder-llm-api-key",
+        },
+    )
+
+    assert result.returncode == 0
+    assert "chatgpt_web login configuration ok" in result.stdout.lower()
+
+
+def test_run_chatgpt_web_browser_script_supports_check_mode():
+    result = run_python_script(
+        "scripts/run_chatgpt_web_browser.py",
+        {
+            "LLM_API_KEY": "placeholder-llm-api-key",
+            "CHATGPT_WEB_EXECUTABLE_PATH": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "CHATGPT_WEB_CDP_URL": "http://127.0.0.1:65530",
+        },
+    )
+
+    assert result.returncode == 0
+    assert "chatgpt_web browser configuration ok" in result.stdout.lower()

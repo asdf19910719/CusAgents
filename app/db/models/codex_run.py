@@ -1,4 +1,4 @@
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -12,7 +12,9 @@ class CodexRun(Base):
     channel_type: Mapped[str] = mapped_column(String(32), nullable=False)
     sender_id: Mapped[str] = mapped_column(String(128), nullable=False)
     notification_target_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    conversation_session_id: Mapped[int | None] = mapped_column(ForeignKey("conversation_sessions.id"), nullable=True)
     prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    resolved_prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     result_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_text_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
