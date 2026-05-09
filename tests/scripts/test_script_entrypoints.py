@@ -48,6 +48,18 @@ def test_run_worker_script_supports_check_mode():
     assert "worker entrypoint ok" in result.stdout.lower()
 
 
+def test_run_scheduler_script_supports_check_mode():
+    result = run_python_script(
+        "scripts/run_scheduler.py",
+        {
+            "LLM_API_KEY": "placeholder-llm-api-key",
+        },
+    )
+
+    assert result.returncode == 0
+    assert "scheduler entrypoint ok" in result.stdout.lower()
+
+
 def test_demo_request_help_mentions_codex_cli_backend():
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts/demo_request.py"), "--help"],

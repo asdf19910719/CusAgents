@@ -137,3 +137,40 @@ def test_parse_new_command():
 
     assert command.command_name == "reset_conversation"
     assert command.arguments == {}
+
+
+def test_parse_arcreel_create_command():
+    command = parse_command_text(
+        '/arcreel_create title="雨夜追踪" summary="侦探在霓虹雨巷发现怀表并追踪黑衣人"',
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "create_arcreel_project"
+    assert command.arguments["title"] == "雨夜追踪"
+    assert command.arguments["summary"] == "侦探在霓虹雨巷发现怀表并追踪黑衣人"
+
+
+def test_parse_arcreel_status_command():
+    command = parse_command_text(
+        '/arcreel_status project="雨夜追踪"',
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "arcreel_project_status"
+    assert command.arguments["project"] == "雨夜追踪"
+
+
+def test_parse_arcreel_resume_command():
+    command = parse_command_text(
+        '/arcreel_resume project="雨夜追踪"',
+        channel="feishu",
+        sender_id="user-1",
+        chat_id="chat-1",
+    )
+
+    assert command.command_name == "resume_arcreel_project"
+    assert command.arguments["project"] == "雨夜追踪"

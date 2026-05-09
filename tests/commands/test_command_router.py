@@ -41,6 +41,48 @@ class FakeNotificationService:
         return None
 
 
+class FakeArcReelResponse:
+    def __init__(self, payload, status_code=200):
+        self.payload = payload
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError("ArcReel HTTP {0}".format(self.status_code))
+
+    def json(self):
+        return self.payload
+
+
+class FakeArcReelClient:
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, json=None, headers=None):
+        self.calls.append(("POST", url, json, headers))
+        if url.endswith("/api/v1/projects"):
+            return FakeArcReelResponse(
+                {
+                    "success": True,
+                    "name": "rainy-night-chase",
+                    "project": {"title": json["title"]},
+                }
+            )
+        if url.endswith("/api/v1/projects/rainy-night-chase/resume"):
+            return FakeArcReelResponse({"success": True, "processed": 1})
+        return FakeArcReelResponse({"success": True})
+
+    def get(self, url, headers=None):
+        self.calls.append(("GET", url, None, headers))
+        return FakeArcReelResponse(
+            {
+                "name": "rainy-night-chase",
+                "title": "雨夜追踪",
+                "status": {"current_stage": "storyboards_generated"},
+            }
+        )
+
+
 def test_command_router_creates_codex_run_and_enqueues_it():
     from app.core.config import Settings
     from app.db.models.codex_run import CodexRun
@@ -290,3 +332,166 @@ def test_command_router_uses_locked_conversation_access_for_chat_messages():
         assert result.success is True
         assert run.resolved_prompt_text == "resolved:Summarize the current test strategy in one sentence"
         assert tracking_service.acquire_lock_flags == [True]
+
+
+def test_command_router_rejects_arcreel_command_without_base_url():
+    from app.core.config import Settings
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    router = CommandRouter(
+        dispatcher=FakeDispatcher(),
+        notification_service=FakeNotificationService(),
+        settings=Settings(_env_file=None, LLM_API_KEY="test-key"),
+    )
+    command = parse_command_text(
+        '/arcreel_status project="雨夜追踪"',
+        channel="feishu",
+        sender_id="ou_test_user",
+        chat_id="oc_test_chat",
+    )
+
+    with Session(engine) as session:
+        try:
+            router.handle(session, command)
+        except ValueError as exc:
+            assert str(exc) == "ARCREEL_BASE_URL is required for ArcReel commands"
+        else:
+            raise AssertionError("expected missing ArcReel base URL error")
+
+
+def test_command_router_creates_arcreel_project_and_binds_conversation():
+    from app.core.config import Settings
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    arcreel_client = FakeArcReelClient()
+    router = CommandRouter(
+        dispatcher=FakeDispatcher(),
+        notification_service=FakeNotificationService(),
+        settings=Settings(_env_file=None, LLM_API_KEY="test-key", ARCREEL_BASE_URL="http://arcreel.test"),
+        arcreel_client=arcreel_client,
+    )
+    command = parse_command_text(
+        '/arcreel_create title="雨夜追踪" summary="侦探在霓虹雨巷发现怀表并追踪黑衣人"',
+        channel="feishu",
+        sender_id="ou_test_user",
+        chat_id="oc_test_chat",
+    )
+
+    with Session(engine) as session:
+        result = router.handle(session, command)
+
+        assert result.success is True
+        assert result.command_name == "create_arcreel_project"
+        assert result.payload["project_name"] == "rainy-night-chase"
+        assert result.payload["conversation_session_id"] is not None
+        assert arcreel_client.calls == [
+            (
+                "POST",
+                "http://arcreel.test/api/v1/projects",
+                {
+                    "title": "雨夜追踪",
+                    "style": "侦探在霓虹雨巷发现怀表并追踪黑衣人",
+                    "generation_mode": "storyboard",
+                    "video_backend": "cusagents-dreamina-video/seedance2.0",
+                },
+                None,
+            )
+        ]
+
+
+def test_command_router_gets_arcreel_project_status():
+    from app.core.config import Settings
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    arcreel_client = FakeArcReelClient()
+    router = CommandRouter(
+        dispatcher=FakeDispatcher(),
+        notification_service=FakeNotificationService(),
+        settings=Settings(_env_file=None, LLM_API_KEY="test-key", ARCREEL_BASE_URL="http://arcreel.test/"),
+        arcreel_client=arcreel_client,
+    )
+    command = parse_command_text(
+        '/arcreel_status project="rainy-night-chase"',
+        channel="feishu",
+        sender_id="ou_test_user",
+        chat_id="oc_test_chat",
+    )
+
+    with Session(engine) as session:
+        result = router.handle(session, command)
+
+        assert result.success is True
+        assert result.command_name == "arcreel_project_status"
+        assert result.status == "storyboards_generated"
+        assert result.payload["project_name"] == "rainy-night-chase"
+        assert arcreel_client.calls == [("GET", "http://arcreel.test/api/v1/projects/rainy-night-chase", None, None)]
+
+
+def test_command_router_resumes_arcreel_project():
+    from app.core.config import Settings
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    arcreel_client = FakeArcReelClient()
+    router = CommandRouter(
+        dispatcher=FakeDispatcher(),
+        notification_service=FakeNotificationService(),
+        settings=Settings(_env_file=None, LLM_API_KEY="test-key", ARCREEL_BASE_URL="http://arcreel.test"),
+        arcreel_client=arcreel_client,
+    )
+    command = parse_command_text(
+        '/arcreel_resume project="rainy-night-chase"',
+        channel="feishu",
+        sender_id="ou_test_user",
+        chat_id="oc_test_chat",
+    )
+
+    with Session(engine) as session:
+        result = router.handle(session, command)
+
+        assert result.success is True
+        assert result.command_name == "resume_arcreel_project"
+        assert result.payload["project_name"] == "rainy-night-chase"
+        assert result.payload["resume"]["processed"] == 1
+        assert arcreel_client.calls == [("POST", "http://arcreel.test/api/v1/projects/rainy-night-chase/resume", {}, None)]
+
+
+def test_command_router_sends_arcreel_bearer_token_when_configured():
+    from app.core.config import Settings
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    arcreel_client = FakeArcReelClient()
+    router = CommandRouter(
+        dispatcher=FakeDispatcher(),
+        notification_service=FakeNotificationService(),
+        settings=Settings(
+            _env_file=None,
+            LLM_API_KEY="test-key",
+            ARCREEL_BASE_URL="http://arcreel.test",
+            ARCREEL_API_TOKEN="arc-token",
+        ),
+        arcreel_client=arcreel_client,
+    )
+    command = parse_command_text(
+        '/arcreel_status project="rainy-night-chase"',
+        channel="feishu",
+        sender_id="ou_test_user",
+        chat_id="oc_test_chat",
+    )
+
+    with Session(engine) as session:
+        result = router.handle(session, command)
+
+    assert result.success is True
+    assert arcreel_client.calls == [
+        (
+            "GET",
+            "http://arcreel.test/api/v1/projects/rainy-night-chase",
+            None,
+            {"Authorization": "Bearer arc-token"},
+        )
+    ]

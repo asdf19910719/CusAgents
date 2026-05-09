@@ -1,19 +1,15 @@
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.db.models.video_asset import VideoAsset
 from app.db.models.video_job import VideoJob
-from app.services.story_video_service import StoryVideoService
 from app.schemas.video import VideoCreateRequest
 from app.core.config import load_settings
 from app.services.factory import build_dreamina_task_recovery_service
 from app.services.factory import build_notification_service
-from app.services.video_notification_messages import build_video_completion_message, build_video_failure_message
+from app.services.video_refresh_service import refresh_video_job_status
 from app.workers.dispatcher import build_job_dispatcher
 
 
@@ -38,46 +34,6 @@ def safe_enqueue_video(dispatcher, video_id):
         }
     except Exception as exc:
         return {"dispatch_status": "failed", "queue_name": None, "dispatch_error": str(exc)}
-
-
-def resolve_video_result_path(query_result):
-    for key in ("file_path", "local_path", "download_path", "path", "output_path"):
-        value = query_result.get(key)
-        if value:
-            return Path(str(value).strip().strip('"'))
-    return None
-
-
-def save_refreshed_video_asset(db, job, query_result):
-    result_path = resolve_video_result_path(query_result)
-    if result_path is None or not result_path.exists():
-        return None
-    existing_asset = db.execute(
-        select(VideoAsset)
-        .where(VideoAsset.video_job_id == job.id)
-        .where(VideoAsset.metadata_json["submit_id"].as_string() == job.submit_id)
-        .where(VideoAsset.status == "completed")
-    ).scalars().first()
-    if existing_asset is not None:
-        return existing_asset
-    asset = VideoAsset(
-        video_job_id=job.id,
-        file_path=str(result_path),
-        preview_path=str(result_path),
-        thumbnail_path=None,
-        duration=job.duration,
-        ratio=job.ratio,
-        video_resolution=job.video_resolution,
-        status="completed",
-        metadata_json=query_result,
-    )
-    db.add(asset)
-    return asset
-
-
-def _notify_video_job(notification_service, db, job, event_type, message):
-    if notification_service is not None:
-        notification_service.notify_video_job_event(db, job, event_type, message)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -194,43 +150,25 @@ def refresh_video_job(
         raise HTTPException(status_code=404, detail="video job not found")
     if not job.submit_id:
         raise HTTPException(status_code=422, detail="video job has no submit_id")
-    service = build_dreamina_task_recovery_service(load_settings(allow_placeholder_llm_api_key=True))
-    query_result = service.query_submit_id(job.submit_id)
-    gen_status = query_result.get("gen_status")
-    story_next_video_job_id = None
-    if gen_status == "success":
-        job.status = "completed"
-        job.current_step = "completed"
-        job.error_message = None
-        asset = save_refreshed_video_asset(db, job, query_result)
-        _notify_video_job(
-            notification_service,
-            db,
-            job,
-            "video_job_completed",
-            build_video_completion_message(job, asset=asset, file_path=getattr(asset, "file_path", None), refreshed=True),
-        )
-        story_next = StoryVideoService(dispatcher=dispatcher).mark_shot_video_completed_and_continue(db, job.id)
-        story_next_video_job_id = getattr(story_next, "video_job_id", None)
-    elif gen_status == "querying":
-        job.status = "querying"
-        job.current_step = "query_result"
-    elif gen_status == "fail":
-        job.status = "failed"
-        job.current_step = "failed"
-        job.error_message = query_result.get("fail_reason") or "dreamina video generation failed"
-        _notify_video_job(
-            notification_service,
-            db,
-            job,
-            "video_job_failed",
-            build_video_failure_message(job, job.error_message or "dreamina video generation failed", refreshed=True),
-        )
-    db.commit()
-    return {
-        "id": job.id,
-        "status": job.status,
-        "submit_id": job.submit_id,
-        "query_result": query_result,
-        "story_next_video_job_id": story_next_video_job_id,
-    }
+    settings = load_settings(allow_placeholder_llm_api_key=True)
+    service = build_dreamina_task_recovery_service(settings)
+    result = refresh_video_job_status(
+        db,
+        job,
+        service,
+        download_dir=settings.dreamina_video_output_dir,
+        notification_service=notification_service,
+        dispatcher=dispatcher,
+    )
+    result["poll_dispatch_status"] = None
+    result["poll_queue_name"] = None
+    result["poll_dispatch_error"] = None
+    if result["status"] == "querying":
+        try:
+            dispatch_result = dispatcher.enqueue_video_poll(job.id, delay_seconds=settings.dreamina_video_poll_seconds)
+            result["poll_dispatch_status"] = dispatch_result["dispatch_status"]
+            result["poll_queue_name"] = dispatch_result["queue_name"]
+        except Exception as exc:
+            result["poll_dispatch_status"] = "failed"
+            result["poll_dispatch_error"] = str(exc)
+    return result

@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     conversation_keep_recent_count: int = Field(default=12, alias="CONVERSATION_KEEP_RECENT_COUNT")
     conversation_retention_seconds: int = Field(default=604800, alias="CONVERSATION_RETENTION_SECONDS")
     conversation_cleanup_batch_size: int = Field(default=100, alias="CONVERSATION_CLEANUP_BATCH_SIZE")
+    arcreel_base_url: str = Field(default="", alias="ARCREEL_BASE_URL")
+    arcreel_api_token: str = Field(default="", alias="ARCREEL_API_TOKEN")
     auto_enqueue_jobs: bool = Field(default=False, alias="AUTO_ENQUEUE_JOBS")
     queue_name: str = Field(default="custom-agents", alias="QUEUE_NAME")
 

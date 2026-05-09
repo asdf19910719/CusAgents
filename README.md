@@ -149,6 +149,15 @@ python scripts/run_worker.py --check
 
 `--check` 只验证脚本入口与依赖导入，不启动真实队列消费。
 
+如果使用视频这类长任务的后台轮询，还需要单独启动 scheduler，把 RQ 延迟任务按计划搬回队列：
+
+```bash
+python scripts/run_scheduler.py
+python scripts/run_scheduler.py --check
+```
+
+运行时建议同时保持 `API`、`worker`、`scheduler` 三个进程在线。`worker` 负责执行队列任务，`scheduler` 只负责定时投递到期任务。
+
 ## 启动飞书长连接客户端
 
 如果不走公网 webhook，可以直接使用官方 SDK 长连接模式：
@@ -224,6 +233,8 @@ C:\Users\91799\bin\dreamina.exe text2video --help
 curl -X POST http://127.0.0.1:8000/videos/{video_id}/refresh
 C:\Users\91799\bin\dreamina.exe query_result --submit_id=<submit_id> --download_dir=./output/dreamina/videos
 ```
+
+开启 `AUTO_ENQUEUE_JOBS=true` 后，视频提交和手动 refresh 会在仍为 `querying` 时安排后台 poll。后台 poll 依赖 `python scripts/run_scheduler.py` 和 `python scripts/run_worker.py` 同时运行。
 
 当前 `POST /jobs` 返回中会包含：
 

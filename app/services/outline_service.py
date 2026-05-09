@@ -3,6 +3,9 @@ import hashlib
 from app.db.models.step_run import StepRun
 
 
+PROMPT_VERSION = "v2"
+
+
 class OutlineService:
     def __init__(self, provider, prompt_service, cache_service):
         self.provider = provider
@@ -19,7 +22,7 @@ class OutlineService:
             step_name="outline",
             normalized_input=normalized_input,
             model_name=model_name,
-            prompt_version="v1",
+            prompt_version=PROMPT_VERSION,
             schema_version="text-v1",
         )
         return normalized_input, cache_key
@@ -49,7 +52,7 @@ class OutlineService:
 
         prompt = self.prompt_service.render(
             step_name="outline",
-            version="v1",
+            version=PROMPT_VERSION,
             context={
                 "topic": job.topic,
                 "style_preset": job.style_preset,
@@ -78,7 +81,7 @@ class OutlineService:
             cache_key=cache_key,
             step_name="outline",
             model_name=model_name,
-            prompt_version="v1",
+            prompt_version=PROMPT_VERSION,
             schema_version="text-v1",
             normalized_input_hash=hashlib.sha256(normalized_input.encode("utf-8")).hexdigest(),
             response_payload={"content": result.content},

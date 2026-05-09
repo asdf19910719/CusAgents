@@ -1,3 +1,8 @@
+# Project Working Rules
+
+- 所有设计与实现工作，都应优先调研并参考同类成熟项目、成熟框架或可信开源库的方案与设计，再结合本仓库既有架构、约束和测试体系落地；只有在现有方案不适用时，才引入自定义设计，并记录关键取舍。
+- 本项目中的代码或文档改动不需要 GitNexus 评估影响面；GitNexus 可作为可选的代码探索工具使用，但不再要求在编辑前运行 `gitnexus_impact`，也不要求在提交、推送或收口前运行 `gitnexus_detect_changes`。
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

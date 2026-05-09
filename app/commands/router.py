@@ -1,5 +1,7 @@
 import uuid
 
+import httpx
+
 from app.commands.schemas import CommandResult
 from app.core.config import load_settings
 from app.db.models.asset import Asset
@@ -14,10 +16,11 @@ from app.services.runtime_health_service import RuntimeHealthService
 
 
 class CommandRouter:
-    def __init__(self, dispatcher, notification_service=None, settings=None):
+    def __init__(self, dispatcher, notification_service=None, settings=None, arcreel_client=None):
         self.dispatcher = dispatcher
         self.notification_service = notification_service
         self.settings = settings or load_settings(allow_placeholder_llm_api_key=True)
+        self.arcreel_client = arcreel_client
 
     def handle(self, session, command):
         try:
@@ -63,6 +66,12 @@ class CommandRouter:
             return self._create_video(session, command)
         if name == "video_status":
             return self._video_status(session, command)
+        if name == "create_arcreel_project":
+            return self._create_arcreel_project(session, command)
+        if name == "arcreel_project_status":
+            return self._arcreel_project_status(session, command)
+        if name == "resume_arcreel_project":
+            return self._resume_arcreel_project(session, command)
         raise ValueError("unsupported command: " + name)
 
     def _create_job(self, session, command):
@@ -321,6 +330,62 @@ class CommandRouter:
             },
         )
 
+    def _create_arcreel_project(self, session, command):
+        arguments = command.arguments
+        conversation = self._get_arcreel_conversation(session, command)
+        payload = {
+            "title": arguments["title"],
+            "style": arguments["summary"],
+            "generation_mode": "storyboard",
+            "video_backend": "cusagents-dreamina-video/seedance2.0",
+        }
+        response = self._arcreel_request("POST", "/api/v1/projects", payload=payload)
+        project_name = response.get("name") or arguments["title"]
+        return CommandResult(
+            success=True,
+            command_name=command.command_name,
+            message="ArcReel 项目已创建",
+            status="created",
+            payload={
+                "project_name": project_name,
+                "conversation_session_id": conversation.id if conversation is not None else None,
+                "arcreel": response,
+            },
+        )
+
+    def _arcreel_project_status(self, session, command):
+        project_name = command.arguments["project"]
+        self._get_arcreel_conversation(session, command)
+        response = self._arcreel_request("GET", "/api/v1/projects/{0}".format(project_name))
+        status_payload = response.get("status") if isinstance(response.get("status"), dict) else {}
+        status = status_payload.get("current_stage") or response.get("status")
+        return CommandResult(
+            success=True,
+            command_name=command.command_name,
+            message="ArcReel 项目状态已返回",
+            status=status,
+            payload={
+                "project_name": response.get("name") or project_name,
+                "arcreel": response,
+            },
+        )
+
+    def _resume_arcreel_project(self, session, command):
+        project_name = command.arguments["project"]
+        conversation = self._get_arcreel_conversation(session, command)
+        response = self._arcreel_request("POST", "/api/v1/projects/{0}/resume".format(project_name), payload={})
+        return CommandResult(
+            success=True,
+            command_name=command.command_name,
+            message="ArcReel 项目恢复已触发",
+            status="resume_requested",
+            payload={
+                "project_name": project_name,
+                "conversation_session_id": conversation.id if conversation is not None else None,
+                "resume": response,
+            },
+        )
+
     def _require_job(self, session, job_id):
         job = session.get(Job, job_id)
         if job is None:
@@ -377,6 +442,28 @@ class CommandRouter:
                 "queue_name": None,
                 "dispatch_error": str(exc),
             }
+
+    def _get_arcreel_conversation(self, session, command):
+        if not command.chat_id:
+            return None
+        return self._build_conversation_service().get_or_create_session(session, command.chat_id, acquire_lock=True)
+
+    def _arcreel_request(self, method, path, payload=None):
+        base_url = (self.settings.arcreel_base_url or "").rstrip("/")
+        if not base_url:
+            raise ValueError("ARCREEL_BASE_URL is required for ArcReel commands")
+        client = self.arcreel_client or httpx.Client(timeout=30.0, trust_env=False)
+        url = base_url + path
+        token = (self.settings.arcreel_api_token or "").strip()
+        headers = {"Authorization": "Bearer " + token} if token else None
+        if method == "GET":
+            response = client.get(url, headers=headers)
+        elif method == "POST":
+            response = client.post(url, json=payload or {}, headers=headers)
+        else:
+            raise ValueError("unsupported ArcReel method: " + method)
+        response.raise_for_status()
+        return response.json()
 
     def _record_command(self, session, command, result, error_message=None):
         related_job_id = result.job_id if result.job_id is not None else None

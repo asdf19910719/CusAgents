@@ -16,6 +16,9 @@ COMMAND_MAP = {
     "/health": "runtime_health",
     "/video": "create_video",
     "/video_status": "video_status",
+    "/arcreel_create": "create_arcreel_project",
+    "/arcreel_status": "arcreel_project_status",
+    "/arcreel_resume": "resume_arcreel_project",
 }
 
 
@@ -85,6 +88,13 @@ def _parse_arguments(command_name, tokens):
         }
     if command_name == "video_status":
         return {"video_id": int(_require(arguments, "video"))}
+    if command_name == "create_arcreel_project":
+        return {
+            "title": _require(arguments, "title"),
+            "summary": _require(arguments, "summary"),
+        }
+    if command_name in ("arcreel_project_status", "resume_arcreel_project"):
+        return {"project": _require(arguments, "project")}
     raise ValueError("unsupported command: " + command_name)
 
 

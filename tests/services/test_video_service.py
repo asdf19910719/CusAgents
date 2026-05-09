@@ -218,3 +218,52 @@ def test_video_service_passes_reference_manifest_as_structured_request(tmp_path)
     assert provider.calls[0].mode == "multimodal2video"
     assert provider.calls[0].reference_images == ["output/shot.png", "output/hero.png"]
     assert provider.calls[0].reference_image_usages[1]["file_name"] == "hero.png"
+
+
+def test_video_service_maps_arcreel_container_project_paths(tmp_path, monkeypatch):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    projects_root = tmp_path / "projects"
+    reference_path = projects_root / "demo-project" / "storyboards" / "shot.png"
+    reference_path.parent.mkdir(parents=True)
+    reference_path.write_bytes(b"image")
+
+    class StructuredProvider:
+        def __init__(self):
+            self.calls = []
+
+        def generate_video(self, request, duration=None, ratio=None, video_resolution=None, model_version=None):
+            self.calls.append(request)
+            return VideoGenerationResult(
+                provider_name="fake",
+                remote_job_id="submit-mapped",
+                video_bytes=b"fake-video",
+                file_name="video",
+                file_extension=".mp4",
+                metadata={"submit_id": "submit-mapped"},
+                duration=request.duration,
+                ratio=request.ratio,
+                video_resolution=request.video_resolution,
+            )
+
+    monkeypatch.setenv("ARCREEL_PROJECTS_HOST_ROOT", str(projects_root))
+    provider = StructuredProvider()
+    service = VideoService(provider=provider, output_dir=str(tmp_path / "videos"))
+
+    with Session(engine) as session:
+        job = create_video_job(session)
+        job.mode = "multimodal2video"
+        job.reference_manifest_json = {
+            "images": [
+                {
+                    "file_path": "/app/projects/demo-project/storyboards/shot.png",
+                    "file_name": "shot.png",
+                    "usage": "shot image",
+                }
+            ]
+        }
+        session.commit()
+
+        service.run_video_job(session, job)
+
+    assert provider.calls[0].reference_images == [str(reference_path)]

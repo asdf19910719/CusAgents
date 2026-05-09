@@ -7,9 +7,14 @@ from app.main import app
 class FakeVideoDispatcher:
     def __init__(self):
         self.calls = []
+        self.poll_calls = []
 
     def enqueue_video_job(self, video_id):
         self.calls.append(video_id)
+        return {"dispatch_status": "enqueued", "queue_name": "video-queue"}
+
+    def enqueue_video_poll(self, video_id, delay_seconds):
+        self.poll_calls.append({"video_id": video_id, "delay_seconds": delay_seconds})
         return {"dispatch_status": "enqueued", "queue_name": "video-queue"}
 
 
@@ -110,7 +115,8 @@ def test_refresh_video_job_queries_saved_submit_id(monkeypatch):
         session.commit()
 
     class FakeRecoveryService:
-        def query_submit_id(self, submit_id):
+        def query_submit_id(self, submit_id, download_dir=None):
+            assert download_dir is not None
             return {"submit_id": submit_id, "gen_status": "success"}
 
     monkeypatch.setattr("app.api.routes.videos.build_dreamina_task_recovery_service", lambda settings: FakeRecoveryService())
@@ -148,6 +154,7 @@ def test_refresh_video_job_saves_asset_when_query_succeeds(monkeypatch, tmp_path
 
     class FakeRecoveryService:
         def query_submit_id(self, submit_id, download_dir=None):
+            assert download_dir == "./output/dreamina/videos"
             return {
                 "submit_id": submit_id,
                 "gen_status": "success",
@@ -202,19 +209,30 @@ def test_video_job_can_stay_querying_for_long_running_tasks(monkeypatch):
         job = session.get(VideoJob, video_id)
         job.status = "querying"
         job.submit_id = "video-submit-long"
+        job.error_message = "old error"
         session.commit()
 
     class FakeRecoveryService:
-        def query_submit_id(self, submit_id):
+        def query_submit_id(self, submit_id, download_dir=None):
             return {"submit_id": submit_id, "gen_status": "querying"}
 
     monkeypatch.setattr("app.api.routes.videos.build_dreamina_task_recovery_service", lambda settings: FakeRecoveryService())
+    dispatcher = FakeVideoDispatcher()
+    app.dependency_overrides[get_video_dispatcher] = lambda: dispatcher
 
-    response = client.post("/videos/{0}/refresh".format(video_id))
+    try:
+        response = client.post("/videos/{0}/refresh".format(video_id))
+    finally:
+        app.dependency_overrides.pop(get_video_dispatcher, None)
 
     assert response.status_code == 200
     assert response.json()["submit_id"] == "video-submit-long"
     assert response.json()["query_result"]["gen_status"] == "querying"
+    assert response.json()["poll_dispatch_status"] == "enqueued"
+    assert dispatcher.poll_calls == [{"video_id": video_id, "delay_seconds": 180}]
+    with SessionLocal() as session:
+        refreshed = session.get(VideoJob, video_id)
+        assert refreshed.error_message is None
 
 
 def test_refresh_video_job_notifies_when_query_fails(monkeypatch):

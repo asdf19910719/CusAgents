@@ -57,6 +57,8 @@ def clear_settings_env(monkeypatch):
         "CONVERSATION_KEEP_RECENT_COUNT",
         "CONVERSATION_RETENTION_SECONDS",
         "CONVERSATION_CLEANUP_BATCH_SIZE",
+        "ARCREEL_BASE_URL",
+        "ARCREEL_API_TOKEN",
         )
     for key in keys:
         monkeypatch.delenv(key, raising=False)
@@ -123,6 +125,20 @@ def test_settings_load_defaults_when_required_values_present(monkeypatch):
     assert settings.conversation_keep_recent_count == 12
     assert settings.conversation_retention_seconds == 604800
     assert settings.conversation_cleanup_batch_size == 100
+    assert settings.arcreel_base_url == ""
+    assert settings.arcreel_api_token == ""
+
+
+def test_settings_load_arcreel_base_url(monkeypatch):
+    clear_settings_env(monkeypatch)
+    monkeypatch.setenv("LLM_API_KEY", "test-key")
+    monkeypatch.setenv("ARCREEL_BASE_URL", "http://127.0.0.1:1241")
+    monkeypatch.setenv("ARCREEL_API_TOKEN", "test-token")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.arcreel_base_url == "http://127.0.0.1:1241"
+    assert settings.arcreel_api_token == "test-token"
 
 
 def test_settings_require_llm_api_key(monkeypatch):

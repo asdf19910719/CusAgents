@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 from app.db.models.video_asset import VideoAsset
 from app.providers.image.dreamina_cli_client import DreaminaCliError
@@ -92,7 +93,7 @@ class VideoService:
         for item in image_items or []:
             file_path = item.get("file_path")
             if file_path:
-                reference_images.append(file_path)
+                reference_images.append(self._resolve_reference_image_path(file_path))
                 reference_image_usages.append(item)
         return VideoGenerationRequest(
             prompt=job.prompt,
@@ -105,6 +106,16 @@ class VideoService:
             model_version=job.model_version,
             submit_id=job.submit_id,
         )
+
+    def _resolve_reference_image_path(self, file_path):
+        text = str(file_path)
+        prefix = "/app/projects/"
+        host_root = os.environ.get("ARCREEL_PROJECTS_HOST_ROOT")
+        if text.startswith(prefix) and host_root:
+            candidate = Path(host_root) / text[len(prefix):]
+            if candidate.exists():
+                return str(candidate)
+        return text
 
     def _notify(self, session, job, event_type, message):
         if self.notification_service is None:

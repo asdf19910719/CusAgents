@@ -16,6 +16,6 @@ def build_worker(queue, platform_name=None, worker_cls=Worker, simple_worker_cls
 def run_worker():
     setup_logging()
     settings = load_settings(allow_placeholder_llm_api_key=True)
-    queue = create_queue(settings.redis_url)
+    queue = create_queue(settings.redis_url, queue_name=settings.queue_name)
     worker = build_worker(queue)
     worker.work()

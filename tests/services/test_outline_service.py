@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.db.models.job import Job
+from app.db.models.llm_cache import LlmCache
 from app.db.models.step_run import StepRun
 from app.providers.llm.base import TextGenerationResult
 from app.services.cache_service import CacheService
@@ -62,6 +63,8 @@ def test_outline_service_generates_outline_and_records_step_run():
         assert step_run.step_name == "outline"
         assert step_run.cache_hit is False
         assert provider.calls == 1
+        cache = session.execute(select(LlmCache).where(LlmCache.step_name == "outline")).scalar_one()
+        assert cache.prompt_version == "v2"
 
 
 def test_outline_service_uses_cache_before_calling_provider():

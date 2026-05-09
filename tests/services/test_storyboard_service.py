@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.db.models.job import Job
+from app.db.models.llm_cache import LlmCache
 from app.db.models.step_run import StepRun
 from app.providers.llm.base import StructuredGenerationResult
 from app.schemas.storyboard import StoryboardShotList
@@ -97,6 +98,8 @@ def test_storyboard_service_generates_valid_storyboard():
         assert isinstance(result, StoryboardShotList)
         assert len(result.shots) == 2
         assert step_run.status == "completed"
+        cache = session.execute(select(LlmCache).where(LlmCache.step_name == "storyboard")).scalar_one()
+        assert cache.prompt_version == "v2"
 
 
 def test_storyboard_service_records_failure_summary_on_invalid_output():
